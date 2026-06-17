@@ -28,8 +28,10 @@ function errorMessageFromValue(value: unknown): string {
     return errorMessageFromValue(item.error);
 }
 
+const apiBaseUrl = webConfig.apiUrl.replace(/\/$/, "");
+
 export const request = axios.create({
-    baseURL: webConfig.apiUrl.replace(/\/$/, ""),
+    baseURL: apiBaseUrl || (typeof window !== "undefined" ? window.location.origin : ""),
 });
 
 request.interceptors.request.use(async (config) => {

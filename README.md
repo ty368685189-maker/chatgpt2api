@@ -52,6 +52,12 @@ docker compose -f docker-compose.warp.yml up -d --build
 
 可在 `.env` 中调整端口和代理运行时参数，也可在后台设置页的「稳定代理运行时」面板手动保存、测试代理和测试 clearance。
 
+如果以后你更换前端访问域名、反代路径或代理接入方式，优先只改这两个变量：
+- `NEXT_PUBLIC_API_URL`：前端请求 API 的固定地址
+- `CHATGPT2API_BASE_URL`：后端对外宣告的基础地址（需要时与前端保持一致）
+
+只要前端页面源和 API 源保持一致，通常就不会再出现 `Failed to fetch`。
+
 ### 本地开发
 
 启动后端：
