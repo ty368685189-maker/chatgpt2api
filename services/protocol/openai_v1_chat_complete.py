@@ -210,6 +210,7 @@ def image_chat_response(body: dict[str, Any]) -> dict[str, Any]:
         n=n,
         response_format="b64_json",
         images=encode_images(images) or None,
+        user_id=body.get("user_id"),
     )))
     response = completion_response(model, image_result_content(result), int(result.get("created") or 0) or None)
     usage = image_usage(
@@ -229,6 +230,7 @@ def image_chat_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         n=n,
         response_format="b64_json",
         images=encode_images(images) or None,
+        user_id=body.get("user_id"),
     ))
     yield from stream_image_chat_completion(image_outputs, model)
 
@@ -238,25 +240,33 @@ def stream_image_chat_completion(image_outputs: Iterable[ImageOutput], model: st
     created = int(time.time())
     sent_role = False
     sent_text = ""
-    for output in image_outputs:
-        content = ""
-        if output.kind == "progress":
-            content = output.text
-            sent_text += content
-        elif output.kind == "result":
-            content = build_chat_image_markdown_content({"data": output.data})
-        elif output.kind == "message":
-            content = output.text[len(sent_text):] if output.text.startswith(sent_text) else output.text
-        if not content:
-            continue
+    try:
+        for output in image_outputs:
+            content = ""
+            if output.kind == "progress":
+                content = output.text
+                sent_text += content
+            elif output.kind == "result":
+                content = build_chat_image_markdown_content({"data": output.data})
+            elif output.kind == "message":
+                content = output.text[len(sent_text):] if output.text.startswith(sent_text) else output.text
+            if not content:
+                continue
+            if not sent_role:
+                sent_role = True
+                yield completion_chunk(model, {"role": "assistant", "content": content}, None, completion_id, created)
+            else:
+                yield completion_chunk(model, {"content": content}, None, completion_id, created)
         if not sent_role:
-            sent_role = True
-            yield completion_chunk(model, {"role": "assistant", "content": content}, None, completion_id, created)
-        else:
-            yield completion_chunk(model, {"content": content}, None, completion_id, created)
-    if not sent_role:
-        yield completion_chunk(model, {"role": "assistant", "content": ""}, None, completion_id, created)
-    yield completion_chunk(model, {}, "stop", completion_id, created)
+            yield completion_chunk(model, {"role": "assistant", "content": ""}, None, completion_id, created)
+        yield completion_chunk(model, {}, "stop", completion_id, created)
+    finally:
+        if hasattr(image_outputs, "close"):
+            try:
+                image_outputs.close()
+            except Exception:
+                pass
+
 
 
 def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:

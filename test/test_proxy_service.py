@@ -411,5 +411,48 @@ class ProxyServiceTests(unittest.TestCase):
         self.assertIsNotNone(results[0])
 
 
+
+class FakeConfigWithSubscriptionProxies:
+    def __init__(self, subscription_proxies: list[str]) -> None:
+        self._subscription_proxies = subscription_proxies
+
+    @property
+    def subscription_proxies(self) -> list[str]:
+        return self._subscription_proxies
+
+
+class ProxyPoolManagerTests(unittest.TestCase):
+    def test_round_robin_rotation(self) -> None:
+        from services.proxy_service import ProxyPoolManager
+        cfg = FakeConfigWithSubscriptionProxies(["http://p1", "http://p2", "http://p3"])
+        manager = ProxyPoolManager(config_store=cfg)
+        
+        self.assertEqual(manager.get_next_proxy(), "http://p1")
+        self.assertEqual(manager.get_next_proxy(), "http://p2")
+        self.assertEqual(manager.get_next_proxy(), "http://p3")
+        self.assertEqual(manager.get_next_proxy(), "http://p1")
+
+    def test_marks_proxy_failed_and_skips_it(self) -> None:
+        from services.proxy_service import ProxyPoolManager
+        cfg = FakeConfigWithSubscriptionProxies(["http://p1", "http://p2", "http://p3"])
+        manager = ProxyPoolManager(config_store=cfg)
+        
+        manager.mark_proxy_failed("http://p2")
+        
+        self.assertEqual(manager.get_next_proxy(), "http://p1")
+        self.assertEqual(manager.get_next_proxy(), "http://p3")
+        self.assertEqual(manager.get_next_proxy(), "http://p1")
+
+    def test_recycles_all_if_all_proxies_failed(self) -> None:
+        from services.proxy_service import ProxyPoolManager
+        cfg = FakeConfigWithSubscriptionProxies(["http://p1", "http://p2"])
+        manager = ProxyPoolManager(config_store=cfg)
+        
+        manager.mark_proxy_failed("http://p1")
+        manager.mark_proxy_failed("http://p2")
+        
+        self.assertIn(manager.get_next_proxy(), ["http://p1", "http://p2"])
+
+
 if __name__ == "__main__":
     unittest.main()

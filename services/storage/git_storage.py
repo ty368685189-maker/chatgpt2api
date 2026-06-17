@@ -36,6 +36,12 @@ class GitStorageBackend(StorageBackend):
         self.local_cache_dir = local_cache_dir
         self.local_cache_dir.mkdir(parents=True, exist_ok=True)
         
+        # 本地非Git同步的JSON存储路径，避免Git冲突
+        self.users_path = self.local_cache_dir / "users.json"
+        self.works_path = self.local_cache_dir / "works.json"
+        self.reg_codes_path = self.local_cache_dir / "reg_codes.json"
+        self.users_path.parent.mkdir(parents=True, exist_ok=True)
+        
         # 构建带认证的 Git URL
         self.auth_repo_url = self._build_auth_url(repo_url, token)
 
@@ -116,6 +122,46 @@ class GitStorageBackend(StorageBackend):
         except Exception as e:
             print(f"[git-storage] save failed: {e}")
             raise e
+
+    def _load_local_json(self, path: Path) -> list[dict[str, Any]]:
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def _save_local_json(self, path: Path, items: list[dict[str, Any]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(items, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def load_users(self) -> list[dict[str, Any]]:
+        """加载用户数据"""
+        return self._load_local_json(self.users_path)
+
+    def save_users(self, users: list[dict[str, Any]]) -> None:
+        """保存用户数据"""
+        self._save_local_json(self.users_path, users)
+
+    def load_works(self) -> list[dict[str, Any]]:
+        """加载作品数据"""
+        return self._load_local_json(self.works_path)
+
+    def save_works(self, works: list[dict[str, Any]]) -> None:
+        """保存作品数据"""
+        self._save_local_json(self.works_path, works)
+
+    def load_reg_codes(self) -> list[dict[str, Any]]:
+        """加载注册码数据"""
+        return self._load_local_json(self.reg_codes_path)
+
+    def save_reg_codes(self, reg_codes: list[dict[str, Any]]) -> None:
+        """保存注册码数据"""
+        self._save_local_json(self.reg_codes_path, reg_codes)
 
     def _load_json_file(self, file_path: str) -> list[dict[str, Any]]:
         data = self._load_json_value(file_path)

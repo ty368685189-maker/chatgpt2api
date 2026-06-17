@@ -171,7 +171,14 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
 }
 
 async function fetchImageAsFile(url: string, fileName: string) {
-  const response = await fetch(url);
+  let targetUrl = url;
+  const filesIndex = url.indexOf("/files/");
+  if (filesIndex !== -1) {
+    const relativePath = url.substring(filesIndex);
+    const baseUrl = webConfig.apiUrl.replace(/\/$/, "");
+    targetUrl = `${baseUrl}${relativePath}`;
+  }
+  const response = await fetch(targetUrl);
   if (!response.ok) {
     throw new Error("读取结果图失败");
   }
@@ -514,6 +521,31 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const qPrompt = params.get("prompt");
+      const qModel = params.get("model");
+      const qSize = params.get("size");
+      const qQuality = params.get("quality");
+
+      if (qPrompt) {
+        setImagePrompt(qPrompt);
+      }
+      if (qModel) {
+        setImageModel(qModel as any);
+      }
+      if (qSize) {
+        const { width, height } = parseImageSize(qSize);
+        setImageWidth(width);
+        setImageHeight(height);
+      }
+      if (qQuality) {
+        setImageQuality(qQuality);
+      }
+    }
+  }, []);
 
   const scrollResultsToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
     const element = resultsViewportRef.current;
@@ -1532,7 +1564,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     const now = new Date().toISOString();
     const conversationId = targetConversation?.id ?? createId();
     const turnId = createId();
-    const imageSize = `${imageWidth || 1024}x${imageHeight || 1024}`;
+    const imageSize = imageRatio === "auto" ? "" : `${imageWidth || 1024}x${imageHeight || 1024}`;
     const draftTurn: ImageTurn = {
       id: turnId,
       prompt,

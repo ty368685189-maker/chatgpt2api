@@ -10,7 +10,43 @@ from fastapi.testclient import TestClient
 import api.image_tasks as image_tasks_module
 
 
-AUTH_HEADERS = {"Authorization": "Bearer chatgpt2api"}
+class DynamicAuthHeaders(dict):
+    @property
+    def auth_value(self):
+        from services.config import config
+        return f"Bearer {config.auth_key}"
+
+    def __getitem__(self, key):
+        if key == "Authorization":
+            return self.auth_value
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if key == "Authorization":
+            return self.auth_value
+        return super().get(key, default)
+
+    def __contains__(self, key):
+        if key == "Authorization":
+            return True
+        return super().__contains__(key)
+
+    def keys(self):
+        return {"Authorization"}
+
+    def __iter__(self):
+        return iter(["Authorization"])
+
+    def items(self):
+        return [("Authorization", self.auth_value)]
+
+    def __len__(self):
+        return 1
+
+    def __repr__(self):
+        return f"{{'Authorization': '{self.auth_value}'}}"
+
+AUTH_HEADERS = DynamicAuthHeaders()
 PNG_BYTES = b"\x89PNG\r\n\x1a\n"
 DATA_IMAGE_URL = f"data:image/png;base64,{base64.b64encode(PNG_BYTES).decode('ascii')}"
 

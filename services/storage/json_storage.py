@@ -13,8 +13,14 @@ class JSONStorageBackend(StorageBackend):
     def __init__(self, file_path: Path, auth_keys_path: Path | None = None):
         self.file_path = file_path
         self.auth_keys_path = auth_keys_path or file_path.with_name("auth_keys.json")
+        self.users_path = file_path.with_name("users.json")
+        self.works_path = file_path.with_name("works.json")
+        self.reg_codes_path = file_path.with_name("reg_codes.json")
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.auth_keys_path.parent.mkdir(parents=True, exist_ok=True)
+        self.users_path.parent.mkdir(parents=True, exist_ok=True)
+        self.works_path.parent.mkdir(parents=True, exist_ok=True)
+        self.reg_codes_path.parent.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _load_json_list(file_path: Path) -> list[dict[str, Any]]:
@@ -61,6 +67,30 @@ class JSONStorageBackend(StorageBackend):
             json.dumps({"items": auth_keys}, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+    def load_users(self) -> list[dict[str, Any]]:
+        """从 JSON 文件加载用户数据"""
+        return self._load_json_list(self.users_path)
+
+    def save_users(self, users: list[dict[str, Any]]) -> None:
+        """保存用户数据到 JSON 文件"""
+        self._save_json_list(self.users_path, users)
+
+    def load_works(self) -> list[dict[str, Any]]:
+        """从 JSON 文件加载作品数据"""
+        return self._load_json_list(self.works_path)
+
+    def save_works(self, works: list[dict[str, Any]]) -> None:
+        """保存作品数据到 JSON 文件"""
+        self._save_json_list(self.works_path, works)
+
+    def load_reg_codes(self) -> list[dict[str, Any]]:
+        """从 JSON 文件加载注册码数据"""
+        return self._load_json_list(self.reg_codes_path)
+
+    def save_reg_codes(self, reg_codes: list[dict[str, Any]]) -> None:
+        """保存注册码数据到 JSON 文件"""
+        self._save_json_list(self.reg_codes_path, reg_codes)
 
     def health_check(self) -> dict[str, Any]:
         """健康检查"""

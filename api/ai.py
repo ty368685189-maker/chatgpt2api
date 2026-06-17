@@ -95,11 +95,44 @@ def create_router() -> APIRouter:
             authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
+        # Quota check and deduct
+        from services.user_service import user_service
+        try:
+            user_service.verify_quota_and_deduct(identity["id"])
+        except PermissionError as exc:
+            raise HTTPException(status_code=429, detail={"error": str(exc)})
+
         payload = body.model_dump(mode="python")
         payload["base_url"] = resolve_image_base_url(request)
+        payload["user_id"] = identity["id"]
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图", request_text=body.prompt)
         await filter_or_log(call, body.prompt)
-        return await call.run(openai_v1_image_generations.handle, payload)
+        result = await call.run(openai_v1_image_generations.handle, payload)
+        
+        # Save to user works
+        if isinstance(result, dict) and "data" in result:
+            try:
+                from services.works_service import works_service
+                import uuid
+                user = user_service.get_user_by_key_id(identity.get("id"))
+                user_id = user["id"] if user else "admin"
+                urls = []
+                for item in result["data"]:
+                    if isinstance(item, dict) and item.get("url"):
+                        urls.append(item["url"])
+                if urls:
+                    works_service.save_work(
+                        work_id=f"direct-{uuid.uuid4().hex[:12]}",
+                        user_id=user_id,
+                        prompt=body.prompt,
+                        model=body.model,
+                        size=body.size,
+                        quality=body.quality,
+                        images=urls,
+                    )
+            except Exception as e:
+                print(f"[direct-gen] Failed to auto-save work: {e}")
+        return result
 
     @router.post("/v1/images/edits")
     async def edit_images(
@@ -107,6 +140,13 @@ def create_router() -> APIRouter:
             authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
+        # Quota check and deduct
+        from services.user_service import user_service
+        try:
+            user_service.verify_quota_and_deduct(identity["id"])
+        except PermissionError as exc:
+            raise HTTPException(status_code=429, detail={"error": str(exc)})
+
         payload, image_sources, mask_sources = await parse_image_edit_request(request)
         prompt = str(payload["prompt"])
         model = str(payload["model"])
@@ -116,12 +156,39 @@ def create_router() -> APIRouter:
         if mask_sources:
             payload["mask"] = await read_image_sources(mask_sources)
         payload["base_url"] = resolve_image_base_url(request)
-        return await call.run(openai_v1_image_edit.handle, payload)
+        payload["user_id"] = identity["id"]
+        result = await call.run(openai_v1_image_edit.handle, payload)
+        
+        # Save to user works
+        if isinstance(result, dict) and "data" in result:
+            try:
+                from services.works_service import works_service
+                import uuid
+                user = user_service.get_user_by_key_id(identity.get("id"))
+                user_id = user["id"] if user else "admin"
+                urls = []
+                for item in result["data"]:
+                    if isinstance(item, dict) and item.get("url"):
+                        urls.append(item["url"])
+                if urls:
+                    works_service.save_work(
+                        work_id=f"direct-{uuid.uuid4().hex[:12]}",
+                        user_id=user_id,
+                        prompt=prompt,
+                        model=model,
+                        size=payload.get("size"),
+                        quality=payload.get("quality"),
+                        images=urls,
+                    )
+            except Exception as e:
+                print(f"[direct-edit] Failed to auto-save work: {e}")
+        return result
 
     @router.post("/v1/chat/completions")
     async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        payload["user_id"] = identity["id"]
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("prompt"), payload.get("messages"))
         call = LoggedCall(
@@ -139,6 +206,7 @@ def create_router() -> APIRouter:
     async def create_response(body: ResponseCreateRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        payload["user_id"] = identity["id"]
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("input"), payload.get("instructions"))
         call = LoggedCall(
@@ -161,6 +229,7 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization or (f"Bearer {x_api_key}" if x_api_key else None))
         payload = body.model_dump(mode="python")
+        payload["user_id"] = identity["id"]
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("system"), payload.get("messages"), payload.get("tools"))
         call = LoggedCall(identity, "/v1/messages", model, "Messages", request_text=request_preview)

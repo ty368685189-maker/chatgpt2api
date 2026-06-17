@@ -32,6 +32,16 @@ def require_identity(authorization: str | None) -> dict[str, object]:
     identity = _legacy_admin_identity(token) or auth_service.authenticate(token)
     if identity is None:
         raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
+    # Check if user is banned
+    try:
+        from services.user_service import user_service
+        user = user_service.get_user_by_key_id(identity["id"])
+        if user and user.get("status") == "banned":
+            raise HTTPException(status_code=403, detail={"error": "您的账户已被管理员封禁，无法使用服务"})
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     return identity
 
 

@@ -10,13 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import webConfig from "@/constants/common-env";
-import { fetchThirdPartyApps, type ThirdPartyAppsSettings } from "@/lib/api";
+import { fetchThirdPartyApps, type ThirdPartyAppsSettings, fetchUserProfile } from "@/lib/api";
 import { getValidatedAuthSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 import { clearStoredAuthSession, type StoredAuthSession } from "@/store/auth";
 
 const adminNavItems = [
-  { href: "/image", label: "生图" },
+  { href: "/image", label: "画图" },
+  { href: "/my-works", label: "我的作品" },
+  { href: "/gallery", label: "社区画廊" },
   { href: "/accounts", label: "号池管理" },
   { href: "/register", label: "注册机" },
   { href: "/image-manager", label: "图片管理" },
@@ -25,7 +27,11 @@ const adminNavItems = [
   { href: "/settings", label: "设置" },
 ];
 
-const userNavItems = [{ href: "/image", label: "画图" }];
+const userNavItems = [
+  { href: "/image", label: "画图" },
+  { href: "/my-works", label: "我的作品" },
+  { href: "/gallery", label: "社区画廊" },
+];
 
 function buildThirdPartyHref(appUrl: string, baseUrl: string, apiKey: string) {
   const url = appUrl.trim();
@@ -99,6 +105,16 @@ export function TopNav() {
     };
   }, [session]);
 
+  const [profile, setProfile] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (session) {
+      fetchUserProfile().then(setProfile).catch(() => {});
+    } else {
+      setProfile(null);
+    }
+  }, [session, pathname]);
+
   const handleLogout = async () => {
     await clearStoredAuthSession();
     router.replace("/login");
@@ -144,12 +160,17 @@ export function TopNav() {
                 <SheetHeader>
                   <SheetTitle>chatgpt2api</SheetTitle>
                   <span className="text-xs text-stone-500 dark:text-stone-400">{roleLabel} · {displayName}</span>
+                  {profile && !profile.is_legacy && (
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                      今日生图: {profile.quota_used} / {profile.quota_limit}
+                    </span>
+                  )}
                 </SheetHeader>
                 <nav className="mt-8 flex flex-col gap-1">
                   {canvasHref ? (
                     <SheetClose asChild>
                       <button
-                        type="button"
+                         type="button"
                         className="flex items-center rounded-xl px-3 py-2.5 text-left text-sm font-medium text-stone-600 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white"
                         onClick={handleCanvasOpen}
                       >
@@ -173,7 +194,7 @@ export function TopNav() {
                 <SheetFooter>
                   <button
                     type="button"
-                    className="rounded-xl border border-stone-200 px-3 py-2.5 text-left text-sm font-medium text-stone-500 transition hover:text-stone-950 dark:border-white/10 dark:text-stone-300 dark:hover:text-white"
+                    className="rounded-xl border border-stone-200 px-3 py-2.5 text-left text-sm font-medium text-stone-500 transition hover:text-stone-950 dark:border-white/10 dark:text-stone-300 dark:hover:white"
                     onClick={() => void handleLogout()}
                   >
                     退出
@@ -220,6 +241,11 @@ export function TopNav() {
           </nav>
           <div className="hidden items-center justify-end gap-2 sm:flex sm:gap-3">
             <HeaderActions />
+            {profile && !profile.is_legacy && (
+              <span className="hidden rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 px-2 py-1 text-[10px] font-medium text-amber-700 dark:text-amber-400 sm:inline-block sm:text-[11px]">
+                今日已生图: {profile.quota_used} / {profile.quota_limit} 次
+              </span>
+            )}
             <span className="hidden rounded-md bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500 dark:bg-white/8 dark:text-stone-300 sm:inline-block sm:text-[11px]">
               {roleLabel} · {displayName}
             </span>

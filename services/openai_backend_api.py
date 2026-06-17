@@ -148,7 +148,7 @@ class OpenAIBackendAPI:
     - 协议兼容转换放在 `services.protocol`
     """
 
-    def __init__(self, access_token: str = "") -> None:
+    def __init__(self, access_token: str = "", proxy: str = "") -> None:
         """初始化后端客户端。
 
         参数：
@@ -169,6 +169,7 @@ class OpenAIBackendAPI:
         self.progress_callback: Callable[[str], None] | None = None
         self.session = requests.Session(**proxy_settings.build_session_kwargs(
             account=self.account,
+            proxy=proxy,
             impersonate=self.fp["impersonate"],
             verify=True,
         ))
@@ -200,6 +201,20 @@ class OpenAIBackendAPI:
         })
         if self.access_token:
             self.session.headers["Authorization"] = f"Bearer {self.access_token}"
+
+    def close(self) -> None:
+        """关闭底层的 Session 会话以释放资源。"""
+        if hasattr(self, "session") and self.session:
+            try:
+                self.session.close()
+            except Exception:
+                pass
+
+    def __enter__(self) -> OpenAIBackendAPI:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
 
     def _build_fp(self) -> Dict[str, str]:
         account = self.account

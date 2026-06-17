@@ -36,6 +36,7 @@ export function ConfigCard() {
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const setGlobalSystemPrompt = useSettingsStore((state) => state.setGlobalSystemPrompt);
+  const setSystemAnnouncement = useSettingsStore((state) => state.setSystemAnnouncement);
   const setSensitiveWordsText = useSettingsStore((state) => state.setSensitiveWordsText);
   const setAIReviewField = useSettingsStore((state) => state.setAIReviewField);
   const setImageStorageField = useSettingsStore((state) => state.setImageStorageField);
@@ -144,6 +145,16 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">用于生成图片结果的访问前缀地址。</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">系统公告</label>
+            <Textarea
+              value={String(config?.system_announcement || "")}
+              onChange={(event) => setSystemAnnouncement(event.target.value)}
+              placeholder="请输入系统公告内容，支持 HTML 或普通文本，用于展示在登录/注册页和生图页..."
+              className="min-h-20 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">在此输入公益站的系统通知或公告信息，留空则不显示。</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">图片自动清理</label>

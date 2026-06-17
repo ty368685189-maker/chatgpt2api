@@ -8,7 +8,8 @@ from utils.helper import CODEX_IMAGE_MODEL
 
 
 def list_models() -> dict[str, Any]:
-    result = OpenAIBackendAPI().list_models()
+    with OpenAIBackendAPI() as api:
+        result = api.list_models()
     data = result.get("data")
     if not isinstance(data, list):
         return result

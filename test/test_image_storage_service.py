@@ -23,6 +23,15 @@ class FakeWebDAVClient:
     def __init__(self, _settings):
         pass
 
+    def close(self) -> None:
+        pass
+
+    def __enter__(self) -> FakeWebDAVClient:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
     def put(self, rel: str, payload: bytes) -> str:
         self.uploaded[rel] = payload
         return f"https://dav.example.test/{rel}"

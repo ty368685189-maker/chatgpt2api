@@ -54,10 +54,18 @@ class FakeProxySettings:
             merged["Cookie"] = "; ".join(f"{key}={value}" for key, value in self.bundle.cookies.items())
         return merged
 
+    def get_profile(self, **kwargs):
+        class FakeProfile:
+            clearance_enabled = True
+        return FakeProfile()
+
     def refresh_clearance(self, target_url="", proxy="", force=False, upstream=True, **kwargs):
         self.refresh_calls.append({"target_url": target_url, "proxy": proxy, "force": force, "upstream": upstream})
         self.refreshed = self.bundle is not None
         return self.bundle
+
+
+
 
 
 class RegisterProxyRuntimeTests(unittest.TestCase):

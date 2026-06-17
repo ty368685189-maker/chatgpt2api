@@ -646,3 +646,43 @@ def test_clearance(target_url: str = "https://chatgpt.com") -> dict:
 
 
 proxy_settings = ProxySettingsStore()
+
+
+class ProxyPoolManager:
+    def __init__(self, config_store=None):
+        self._config = config_store or config
+        self._lock = threading.Lock()
+        self._index = 0
+        self._failed_proxies: dict[str, float] = {}  # proxy -> failed timestamp
+
+    def get_next_proxy(self) -> str | None:
+        proxies = self._config.subscription_proxies
+        if not proxies:
+            return None
+        
+        with self._lock:
+            # Filter out proxies that failed recently (within 5 minutes)
+            now = time.time()
+            self._failed_proxies = {p: t for p, t in self._failed_proxies.items() if now - t < 300}
+            
+            valid_proxies = [p for p in proxies if p not in self._failed_proxies]
+            if not valid_proxies:
+                # If all failed, clear failed cache and use all
+                self._failed_proxies.clear()
+                valid_proxies = proxies
+
+            self._index = self._index % len(valid_proxies)
+            proxy = valid_proxies[self._index]
+            self._index += 1
+            return proxy
+
+    def mark_proxy_failed(self, proxy: str) -> None:
+        if not proxy:
+            return
+        with self._lock:
+            self._failed_proxies[proxy] = time.time()
+            from utils.log import logger
+            logger.warning(f"[proxy-pool] Marked proxy node as failed: {proxy}")
+
+
+proxy_pool_manager = ProxyPoolManager()

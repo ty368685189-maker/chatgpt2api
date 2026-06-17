@@ -424,6 +424,13 @@ class ConfigStore:
             return 3
 
     @property
+    def image_user_concurrency(self) -> int:
+        try:
+            return max(1, int(self.data.get("image_user_concurrency", 2)))
+        except (TypeError, ValueError):
+            return 2
+
+    @property
     def image_parallel_generation(self) -> bool:
         value = self.data.get("image_parallel_generation", True)
         if isinstance(value, str):
@@ -498,6 +505,19 @@ class ConfigStore:
         return str(self.data.get("global_system_prompt") or "").strip()
 
     @property
+    def system_announcement(self) -> str:
+        return str(self.data.get("system_announcement") or "").strip()
+
+    @property
+    def subscription_proxies(self) -> list[str]:
+        val = self.data.get("subscription_proxies")
+        if isinstance(val, list):
+            return [str(p).strip() for p in val if str(p).strip()]
+        if isinstance(val, str):
+            return [line.strip() for line in val.split("\n") if line.strip()]
+        return []
+
+    @property
     def images_dir(self) -> Path:
         path = DATA_DIR / "images"
         path.mkdir(parents=True, exist_ok=True)
@@ -547,6 +567,7 @@ class ConfigStore:
         data["image_poll_interval_secs"] = self.image_poll_interval_secs
         data["image_poll_initial_wait_secs"] = self.image_poll_initial_wait_secs
         data["image_account_concurrency"] = self.image_account_concurrency
+        data["image_user_concurrency"] = self.image_user_concurrency
         data["image_parallel_generation"] = self.image_parallel_generation
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data["auto_remove_rate_limited_accounts"] = self.auto_remove_rate_limited_accounts
@@ -555,6 +576,8 @@ class ConfigStore:
         data["sensitive_words"] = self.sensitive_words
         data["ai_review"] = self.ai_review
         data["global_system_prompt"] = self.global_system_prompt
+        data["system_announcement"] = self.system_announcement
+        data["subscription_proxies"] = self.subscription_proxies
         data["backup"] = self.get_backup_settings()
         data["image_storage"] = self.get_image_storage_settings()
         data["chat_completion_cache"] = self.get_chat_completion_cache_settings()
@@ -587,6 +610,14 @@ class ConfigStore:
     def update(self, data: dict[str, object]) -> dict[str, object]:
         next_data = dict(self.data)
         next_data.update(dict(data or {}))
+        if "subscription_proxies" in next_data:
+            val = next_data.get("subscription_proxies")
+            if isinstance(val, str):
+                next_data["subscription_proxies"] = [line.strip() for line in val.split("\n") if line.strip()]
+            elif isinstance(val, list):
+                next_data["subscription_proxies"] = [str(p).strip() for p in val if str(p).strip()]
+            else:
+                next_data["subscription_proxies"] = []
         if "backup" in next_data:
             next_data["backup"] = _normalize_backup_settings(next_data.get("backup"))
         if "image_storage" in next_data:

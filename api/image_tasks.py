@@ -53,6 +53,13 @@ def create_router() -> APIRouter:
         authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
+        # Quota check and deduct
+        from services.user_service import user_service
+        try:
+            user_service.verify_quota_and_deduct(identity["id"])
+        except PermissionError as exc:
+            raise HTTPException(status_code=429, detail={"error": str(exc)})
+
         await filter_or_log(LoggedCall(identity, "/api/image-tasks/generations", body.model, "文生图任务", request_text=body.prompt), body.prompt)
         try:
             return await run_in_threadpool(
@@ -74,6 +81,13 @@ def create_router() -> APIRouter:
         authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
+        # Quota check and deduct
+        from services.user_service import user_service
+        try:
+            user_service.verify_quota_and_deduct(identity["id"])
+        except PermissionError as exc:
+            raise HTTPException(status_code=429, detail={"error": str(exc)})
+
         payload, image_sources, mask_sources = await parse_image_edit_request(request)
         client_task_id = str(payload.get("client_task_id") or "").strip()
         if not client_task_id:

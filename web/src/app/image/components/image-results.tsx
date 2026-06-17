@@ -6,6 +6,7 @@ import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } f
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
+import webConfig from "@/constants/common-env";
 
 export type ImageLightboxItem = {
   id: string;
@@ -56,9 +57,16 @@ async function downloadStoredImage(image: StoredImage, index: number) {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       blob = new Blob([bytes], { type: "image/png" });
     } else if (image.url) {
-      // 确保 URL 是绝对路径
-      const url = image.url.startsWith("http") ? image.url : `${window.location.origin}${image.url}`;
-      const res = await fetch(url);
+      let targetUrl = image.url;
+      const filesIndex = image.url.indexOf("/files/");
+      if (filesIndex !== -1) {
+        const relativePath = image.url.substring(filesIndex);
+        const baseUrl = webConfig.apiUrl.replace(/\/$/, "");
+        targetUrl = `${baseUrl}${relativePath}`;
+      } else if (!image.url.startsWith("http")) {
+        targetUrl = `${window.location.origin}${image.url}`;
+      }
+      const res = await fetch(targetUrl);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -457,6 +465,7 @@ function getTurnStatusLabel(status: ImageTurnStatus) {
 
 const PROGRESS_LABELS: Record<string, string> = {
   getting_account: "确认可用账号",
+  image_stream_resolve_start: "提交绘制指令",
   uploading: "上传图片",
   bootstrapping: "预热首页",
   getting_token: "获取 token",

@@ -156,6 +156,7 @@ export type SettingsConfig = {
   proxy: string;
   base_url?: string;
   global_system_prompt?: string;
+  system_announcement?: string;
   sensitive_words?: string[];
   ai_review?: {
     enabled?: boolean;
@@ -997,4 +998,188 @@ export async function testProxyClearance(targetUrl?: string) {
     method: "POST",
     body: { target_url: targetUrl ?? "https://chatgpt.com" },
   });
+}
+
+// ── User Authentication and Signup ───────────────────────────────────
+
+export type CaptchaResponse = {
+  id: string;
+  image: string; // base64 image data
+};
+
+export type UserProfileResponse = {
+  id: string;
+  username: string;
+  role: string;
+  email: string;
+  quota_limit: number;
+  quota_used: number;
+  api_key: string;
+  created_at: string;
+  is_legacy?: boolean;
+};
+
+export async function fetchCaptcha() {
+  return httpRequest<CaptchaResponse>("/api/auth/captcha");
+}
+
+export async function registerUser(body: {
+  username: string;
+  password: string;
+  email?: string;
+  reg_code: string;
+}) {
+  return httpRequest<{ status: string; user: any }>("/api/auth/register", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function loginUser(body: {
+  username: string;
+  password: string;
+}) {
+  return httpRequest<{ status: string; user: UserProfileResponse }>("/api/auth/login", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function fetchUserProfile() {
+  return httpRequest<UserProfileResponse>("/api/auth/profile");
+}
+
+// ── User Works and Gallery ──────────────────────────────────────────
+
+export type WorkItem = {
+  id: string;
+  user_id: string;
+  prompt: string;
+  model: string;
+  size: string;
+  quality: string;
+  images: string[];
+  created_at: string;
+  is_public: boolean;
+  likes: number;
+};
+
+export async function fetchUserWorks(limit: number = 20, offset: number = 0) {
+  return httpRequest<{ items: WorkItem[]; total: number; has_more: boolean }>(
+    `/api/user/works?limit=${limit}&offset=${offset}`
+  );
+}
+
+export async function deleteUserWork(workId: string) {
+  return httpRequest<{ status: string }>(`/api/user/works/${workId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function shareUserWork(workId: string, isPublic: boolean) {
+  return httpRequest<{ status: string }>(`/api/user/works/${workId}/share`, {
+    method: "POST",
+    body: { is_public: isPublic },
+  });
+}
+
+export async function fetchGallery(q: string = "", limit: number = 20, offset: number = 0) {
+  return httpRequest<{ items: WorkItem[]; total: number; has_more: boolean }>(
+    `/api/gallery?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`
+  );
+}
+
+export async function likeGalleryWork(workId: string) {
+  return httpRequest<{ status: string; likes: number }>(`/api/gallery/${workId}/like`, {
+    method: "POST",
+  });
+}
+
+// ── Admin Management ───────────────────────────────────────────────
+
+export type AdminUser = {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  quota_limit: number;
+  quota_used: number;
+  last_active_date: string;
+  status: "active" | "banned";
+  auth_key_id: string;
+  api_key: string;
+  registered_by_code: string;
+  created_at: string;
+};
+
+export type RegCodeItem = {
+  code: string;
+  quota_limit: number;
+  max_uses: number;
+  used_count: number;
+  created_at: string;
+  note: string;
+  status: "active" | "expired";
+};
+
+export async function adminFetchUsers() {
+  return httpRequest<{ items: AdminUser[] }>("/api/admin/users");
+}
+
+export async function adminBanUser(userId: string) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}/ban`, {
+    method: "POST",
+  });
+}
+
+export async function adminUnbanUser(userId: string) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}/unban`, {
+    method: "POST",
+  });
+}
+
+export async function adminUpdateUserQuota(userId: string, quotaLimit: number) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}/quota`, {
+    method: "POST",
+    body: { quota_limit: quotaLimit },
+  });
+}
+
+export async function adminResetUserPassword(userId: string, newPassword: string) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}/password`, {
+    method: "POST",
+    body: { password: newPassword },
+  });
+}
+
+export async function adminChangeUserRole(userId: string, role: string) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}/role`, {
+    method: "POST",
+    body: { role },
+  });
+}
+
+export async function adminFetchRegCodes() {
+  return httpRequest<{ items: RegCodeItem[] }>("/api/admin/reg-codes");
+}
+
+export async function adminCreateRegCode(body: {
+  quota_limit: number;
+  max_uses: number;
+  note: string;
+}) {
+  return httpRequest<{ status: string; item: RegCodeItem }>("/api/admin/reg-codes", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function adminDeleteRegCode(code: string) {
+  return httpRequest<{ status: string }>(`/api/admin/reg-codes/${code}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchPublicAnnouncement() {
+  return httpRequest<{ announcement: string }>("/api/public/announcement");
 }

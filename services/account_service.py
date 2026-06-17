@@ -56,6 +56,7 @@ class AccountService:
         self._image_inflight: dict[str, int] = {}
         self._token_aliases: dict[str, str] = {}
         self._cumulative_total = self._load_cumulative_total()
+        self.start_health_check_loop()
 
     def _get_cumulative_file(self) -> Path:
         from services.config import DATA_DIR
@@ -75,6 +76,55 @@ class AccountService:
             self._get_cumulative_file().write_text(str(self._cumulative_total))
         except Exception:
             pass
+
+    def start_health_check_loop(self) -> None:
+        """启动后台定时健康巡检线程。"""
+        def run_health_check() -> None:
+            # Delay the first run to allow startup to complete
+            time.sleep(15)
+            while True:
+                try:
+                    from services.openai_backend_api import OpenAIBackendAPI, InvalidAccessTokenError
+                    from utils.log import logger
+                    
+                    tokens = self.list_normal_tokens()
+                    if tokens:
+                        logger.info(f"[health-check] Starting health check for {len(tokens)} normal accounts")
+                        for token in tokens:
+                            acct = self.get_account(token)
+                            if not acct or acct.get("status") != "正常":
+                                continue
+                            
+                            backend = None
+                            try:
+                                backend = OpenAIBackendAPI(access_token=token)
+                                backend._get_me()
+                            except InvalidAccessTokenError as exc:
+                                logger.warning(f"[health-check] Account {acct.get('email')} is invalid: {exc}")
+                                self.remove_invalid_token(token, "health_check")
+                            except Exception as exc:
+                                error_str = str(exc)
+                                if "401" in error_str or "token invalidated" in error_str:
+                                    logger.warning(f"[health-check] Account {acct.get('email')} token invalid: {exc}")
+                                    self.remove_invalid_token(token, "health_check")
+                                elif "403" in error_str:
+                                    logger.warning(f"[health-check] Account {acct.get('email')} forbidden/CF: {exc}")
+                                    self.remove_invalid_token(token, "health_check")
+                            finally:
+                                if backend and hasattr(backend, "session"):
+                                    try:
+                                        backend.session.close()
+                                    except Exception:
+                                        pass
+                except Exception as e:
+                    from utils.log import logger
+                    logger.error(f"[health-check] Error in health check loop: {e}")
+                
+                # Check every 30 minutes
+                time.sleep(30 * 60)
+
+        t = Thread(target=run_health_check, name="account-health-checker", daemon=True)
+        t.start()
 
     @staticmethod
     def _now() -> str:
@@ -1329,12 +1379,14 @@ class AccountService:
         active_token = self.refresh_access_token(access_token, event=f"{event}:preflight") or access_token
         try:
             from services.openai_backend_api import InvalidAccessTokenError, OpenAIBackendAPI
-            result = OpenAIBackendAPI(active_token).get_user_info()
+            with OpenAIBackendAPI(active_token) as api:
+                result = api.get_user_info()
         except InvalidAccessTokenError as exc:
             refreshed_token = self.refresh_access_token(active_token, force=True, event=f"{event}:invalid_access_token")
             if refreshed_token and refreshed_token != active_token:
                 try:
-                    result = OpenAIBackendAPI(refreshed_token).get_user_info()
+                    with OpenAIBackendAPI(refreshed_token) as api:
+                        result = api.get_user_info()
                 except InvalidAccessTokenError as retry_exc:
                     if self._record_invalid_token_seen(
                         refreshed_token,

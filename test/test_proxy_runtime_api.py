@@ -11,7 +11,43 @@ import api.system as system_module
 from services.config import DEFAULT_PROXY_RUNTIME
 
 
-AUTH_HEADERS = {"Authorization": "Bearer chatgpt2api"}
+class DynamicAuthHeaders(dict):
+    @property
+    def auth_value(self):
+        from services.config import config
+        return f"Bearer {config.auth_key}"
+
+    def __getitem__(self, key):
+        if key == "Authorization":
+            return self.auth_value
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if key == "Authorization":
+            return self.auth_value
+        return super().get(key, default)
+
+    def __contains__(self, key):
+        if key == "Authorization":
+            return True
+        return super().__contains__(key)
+
+    def keys(self):
+        return {"Authorization"}
+
+    def __iter__(self):
+        return iter(["Authorization"])
+
+    def items(self):
+        return [("Authorization", self.auth_value)]
+
+    def __len__(self):
+        return 1
+
+    def __repr__(self):
+        return f"{{'Authorization': '{self.auth_value}'}}"
+
+AUTH_HEADERS = DynamicAuthHeaders()
 
 
 class FakeStorage:

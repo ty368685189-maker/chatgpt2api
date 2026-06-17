@@ -30,6 +30,31 @@ class AuthKeyModel(Base):
     data = Column(Text, nullable=False)
 
 
+class UserModel(Base):
+    """用户数据模型"""
+    __tablename__ = "users"
+
+    id = Column(String(255), primary_key=True, unique=True, nullable=False, index=True)
+    data = Column(Text, nullable=False)
+
+
+class WorkModel(Base):
+    """作品数据模型"""
+    __tablename__ = "works"
+
+    id = Column(String(255), primary_key=True, unique=True, nullable=False, index=True)
+    data = Column(Text, nullable=False)
+
+
+class RegistrationCodeModel(Base):
+    """注册码数据模型"""
+    __tablename__ = "registration_codes"
+
+    code = Column(String(255), primary_key=True, unique=True, nullable=False, index=True)
+    data = Column(Text, nullable=False)
+
+
+
 class DatabaseStorageBackend(StorageBackend):
     """数据库存储后端（支持 SQLite、PostgreSQL、MySQL 等）"""
 
@@ -71,7 +96,31 @@ class DatabaseStorageBackend(StorageBackend):
         """保存鉴权密钥数据到数据库"""
         self._save_rows(AuthKeyModel, auth_keys, "id", "key_id")
 
-    def _load_rows(self, model: type[AccountModel] | type[AuthKeyModel]) -> list[dict[str, Any]]:
+    def load_users(self) -> list[dict[str, Any]]:
+        """从数据库加载用户数据"""
+        return self._load_rows(UserModel)
+
+    def save_users(self, users: list[dict[str, Any]]) -> None:
+        """保存用户数据到数据库"""
+        self._save_rows(UserModel, users, "id")
+
+    def load_works(self) -> list[dict[str, Any]]:
+        """从数据库加载作品数据"""
+        return self._load_rows(WorkModel)
+
+    def save_works(self, works: list[dict[str, Any]]) -> None:
+        """保存作品数据到数据库"""
+        self._save_rows(WorkModel, works, "id")
+
+    def load_reg_codes(self) -> list[dict[str, Any]]:
+        """从数据库加载注册码数据"""
+        return self._load_rows(RegistrationCodeModel)
+
+    def save_reg_codes(self, reg_codes: list[dict[str, Any]]) -> None:
+        """保存注册码数据到数据库"""
+        self._save_rows(RegistrationCodeModel, reg_codes, "code")
+
+    def _load_rows(self, model: type) -> list[dict[str, Any]]:
         session = self.Session()
         try:
             items = []
@@ -88,7 +137,7 @@ class DatabaseStorageBackend(StorageBackend):
 
     def _save_rows(
         self,
-        model: type[AccountModel] | type[AuthKeyModel],
+        model: type,
         items: list[dict[str, Any]],
         source_key: str,
         target_key: str | None = None,

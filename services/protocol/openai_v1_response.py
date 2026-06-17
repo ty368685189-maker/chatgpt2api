@@ -347,34 +347,42 @@ def stream_image_response(
     response_id = f"resp_{uuid.uuid4().hex}"
     created = int(time.time())
     yield response_created(response_id, model, created)
-    for output in image_outputs:
-        if output.kind == "message":
-            text = output.text
-            item = text_output_item(text)
-            usage = token_usage(
-                input_text_tokens=count_text_tokens(prompt, model),
-                input_image_tokens=input_image_tokens,
-                output_text_tokens=count_text_tokens(text, model),
-            )
-            yield {"type": "response.output_text.delta", "item_id": item["id"], "output_index": 0, "content_index": 0, "delta": text}
-            yield {"type": "response.output_text.done", "item_id": item["id"], "output_index": 0, "content_index": 0, "text": text}
-            yield {"type": "response.output_item.done", "output_index": 0, "item": item}
-            yield response_completed(response_id, model, created, [item], usage)
-            return
-        if output.kind != "result":
-            continue
-        items = image_output_items(prompt, output.data)
-        if items:
-            usage = image_usage(
-                input_text_tokens=count_text_tokens(prompt, model),
-                input_image_tokens=input_image_tokens,
-                output_tokens=count_image_output_items_tokens(output.data, size, quality),
-            )
-            for output_index, item in enumerate(items):
-                yield {"type": "response.output_item.done", "output_index": output_index, "item": item}
-            yield response_completed(response_id, model, created, items, usage)
-            return
-    raise RuntimeError("image generation failed")
+    try:
+        for output in image_outputs:
+            if output.kind == "message":
+                text = output.text
+                item = text_output_item(text)
+                usage = token_usage(
+                    input_text_tokens=count_text_tokens(prompt, model),
+                    input_image_tokens=input_image_tokens,
+                    output_text_tokens=count_text_tokens(text, model),
+                )
+                yield {"type": "response.output_text.delta", "item_id": item["id"], "output_index": 0, "content_index": 0, "delta": text}
+                yield {"type": "response.output_text.done", "item_id": item["id"], "output_index": 0, "content_index": 0, "text": text}
+                yield {"type": "response.output_item.done", "output_index": 0, "item": item}
+                yield response_completed(response_id, model, created, [item], usage)
+                return
+            if output.kind != "result":
+                continue
+            items = image_output_items(prompt, output.data)
+            if items:
+                usage = image_usage(
+                    input_text_tokens=count_text_tokens(prompt, model),
+                    input_image_tokens=input_image_tokens,
+                    output_tokens=count_image_output_items_tokens(output.data, size, quality),
+                )
+                for output_index, item in enumerate(items):
+                    yield {"type": "response.output_item.done", "output_index": output_index, "item": item}
+                yield response_completed(response_id, model, created, items, usage)
+                return
+        raise RuntimeError("image generation failed")
+    finally:
+        if hasattr(image_outputs, "close"):
+            try:
+                image_outputs.close()
+            except Exception:
+                pass
+
 
 
 def collect_response(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
@@ -419,6 +427,7 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         quality=str(tool.get("quality") or "auto"),
         response_format="b64_json",
         images=images,
+        user_id=body.get("user_id"),
     ))
     yield from stream_image_response(image_outputs, prompt, model, input_image_tokens, tool.get("size"), str(tool.get("quality") or "auto"))
 
