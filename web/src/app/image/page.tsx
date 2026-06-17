@@ -39,6 +39,7 @@ import {
   renameImageConversation,
   saveImageConversation,
   saveImageConversations,
+  resetImageConversationStorage,
   type ImageConversation,
   type ImageConversationMode,
   type ImageTurn,
@@ -46,6 +47,7 @@ import {
   type StoredImage,
   type StoredReferenceImage,
 } from "@/store/image-conversations";
+import { getStoredAuthSession } from "@/store/auth";
 
 const ACTIVE_CONVERSATION_STORAGE_KEY = "chatgpt2api:image_active_conversation_id";
 const IMAGE_RATIO_STORAGE_KEY = "chatgpt2api:image_last_ratio";
@@ -632,6 +634,12 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setImageHeight("1024");
       setImageQuality(storedQuality || "auto");
       setImageCount(storedCount ? clampImageCount(storedCount) : "1");
+
+      // 用户隔离：加载对话前先设置当前用户的 subjectId
+      const session = await getStoredAuthSession();
+      if (session?.subjectId) {
+        resetImageConversationStorage(session.subjectId);
+      }
 
       const items = await listImageConversations();
       const normalizedItems = await recoverConversationHistory(items);

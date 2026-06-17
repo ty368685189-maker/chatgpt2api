@@ -4,6 +4,35 @@ import localforage from "localforage";
 
 import type { ImageModel } from "@/lib/api";
 
+// --- 用户隔离：按 subjectId 分 storeName，防止串台 ---
+let _currentUserId = "";
+let _cachedStorage: ReturnType<typeof localforage.createInstance> | null = null;
+let _cachedStoreName = "";
+
+function getImageConversationStorage() {
+  const storeName = _currentUserId
+    ? `image_conversations_${_currentUserId}`
+    : "image_conversations";
+  if (!_cachedStorage || _cachedStoreName !== storeName) {
+    _cachedStorage = localforage.createInstance({
+      name: "chatgpt2api",
+      storeName,
+    });
+    _cachedStoreName = storeName;
+  }
+  return _cachedStorage;
+}
+
+/**
+ * 切换用户时调用，重置 localforage 实例指向新用户的 store。
+ * 退出登录时传空字符串即可。
+ */
+export function resetImageConversationStorage(userId: string) {
+  _currentUserId = userId || "";
+  _cachedStorage = null;
+  _cachedStoreName = "";
+}
+
 export type ImageConversationMode = "generate" | "edit";
 
 export type StoredReferenceImage = {
@@ -62,10 +91,7 @@ export type ImageConversationStats = {
   running: number;
 };
 
-const imageConversationStorage = localforage.createInstance({
-  name: "chatgpt2api",
-  storeName: "image_conversations",
-});
+// 旧的静态实例已替换为 getImageConversationStorage() 动态函数（见文件顶部）
 
 const IMAGE_CONVERSATIONS_KEY = "items";
 let imageConversationWriteQueue: Promise<void> = Promise.resolve();
@@ -227,7 +253,7 @@ function queueImageConversationWrite<T>(operation: () => Promise<T>): Promise<T>
 
 async function readStoredImageConversations(): Promise<ImageConversation[]> {
   const items =
-    (await imageConversationStorage.getItem<Array<ImageConversation & Record<string, unknown>>>(
+    (await getImageConversationStorage().getItem<Array<ImageConversation & Record<string, unknown>>>(
       IMAGE_CONVERSATIONS_KEY,
     )) || [];
   return items.map(normalizeConversation);
@@ -245,7 +271,7 @@ export async function saveImageConversations(conversations: ImageConversation[])
       const current = conversationMap.get(conversation.id);
       conversationMap.set(conversation.id, current ? pickLatestConversation(current, conversation) : conversation);
     }
-    await imageConversationStorage.setItem(
+    await getImageConversationStorage().setItem(
       IMAGE_CONVERSATIONS_KEY,
       sortImageConversations([...conversationMap.values()]),
     );
@@ -262,7 +288,7 @@ export async function saveImageConversation(conversation: ImageConversation): Pr
       persistedConversation,
       ...items.filter((item) => item.id !== persistedConversation.id),
     ]);
-    await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
+    await getImageConversationStorage().setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
   });
 }
 
@@ -276,14 +302,14 @@ export async function renameImageConversation(id: string, title: string): Promis
       updated,
       ...items.filter((item) => item.id !== id),
     ]);
-    await imageConversationStorage.setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
+    await getImageConversationStorage().setItem(IMAGE_CONVERSATIONS_KEY, nextItems);
   });
 }
 
 export async function deleteImageConversation(id: string): Promise<void> {
   await queueImageConversationWrite(async () => {
     const items = await readStoredImageConversations();
-    await imageConversationStorage.setItem(
+    await getImageConversationStorage().setItem(
       IMAGE_CONVERSATIONS_KEY,
       items.filter((item) => item.id !== id),
     );
@@ -292,7 +318,7 @@ export async function deleteImageConversation(id: string): Promise<void> {
 
 export async function clearImageConversations(): Promise<void> {
   await queueImageConversationWrite(async () => {
-    await imageConversationStorage.removeItem(IMAGE_CONVERSATIONS_KEY);
+    await getImageConversationStorage().removeItem(IMAGE_CONVERSATIONS_KEY);
   });
 }
 

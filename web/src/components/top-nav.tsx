@@ -14,6 +14,7 @@ import { fetchThirdPartyApps, type ThirdPartyAppsSettings, fetchUserProfile } fr
 import { getValidatedAuthSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 import { clearStoredAuthSession, type StoredAuthSession } from "@/store/auth";
+import { resetImageConversationStorage } from "@/store/image-conversations";
 
 const adminNavItems = [
   { href: "/image", label: "画图" },
@@ -116,6 +117,7 @@ export function TopNav() {
   }, [session, pathname]);
 
   const handleLogout = async () => {
+    resetImageConversationStorage("");  // 清除用户对话实例，防止串台
     await clearStoredAuthSession();
     router.replace("/login");
   };
