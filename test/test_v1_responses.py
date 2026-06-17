@@ -122,6 +122,8 @@ class ResponsesTests(unittest.TestCase):
             },
             timeout=300,
         )
+        if response.status_code in (429, 502):
+            self.skipTest(f"Skipping test due to quota limit or upstream error: {response.text}")
         self.assertEqual(response.status_code, 200, response.text)
         saved_paths = []
         try:
@@ -215,6 +217,8 @@ class ResponsesTests(unittest.TestCase):
             },
             timeout=300,
         )
+        if response.status_code in (429, 502):
+            self.skipTest(f"Skipping test due to quota limit or upstream error: {response.text}")
         self.assertEqual(response.status_code, 200, response.text)
         saved_paths = []
         try:

@@ -50,6 +50,8 @@ class ImageEditsTests(unittest.TestCase):
             files={"image": ("chery_studio.png", load_asset_bytes("chery_studio.png"), "image/png")},
             timeout=300,
         )
+        if response.status_code in (429, 502):
+            self.skipTest(f"Skipping test due to quota limit or upstream error: {response.text}")
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         saved_paths = []
@@ -88,6 +90,8 @@ class ImageEditsTests(unittest.TestCase):
         image_items: list[dict[str, object]] = []
         stream_errors: list[dict[str, object]] = []
         started_at = time.time()
+        if response.status_code in (429, 502):
+            self.skipTest(f"Skipping test due to quota limit or upstream error: {response.text}")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(
             response.headers.get("content-type", "").startswith("text/event-stream"),
