@@ -114,7 +114,7 @@ def create_router() -> APIRouter:
             try:
                 from services.works_service import works_service
                 import uuid
-                user = user_service.get_user_by_key_id(identity.get("id"))
+                user = user_service.get_user_by_id(str(identity.get("id") or ""))
                 user_id = user["id"] if user else "admin"
                 urls = []
                 for item in result["data"]:
@@ -164,7 +164,7 @@ def create_router() -> APIRouter:
             try:
                 from services.works_service import works_service
                 import uuid
-                user = user_service.get_user_by_key_id(identity.get("id"))
+                user = user_service.get_user_by_id(str(identity.get("id") or ""))
                 user_id = user["id"] if user else "admin"
                 urls = []
                 for item in result["data"]:

@@ -742,13 +742,13 @@ function AccountsPageContent() {
           <div className="text-xs font-semibold tracking-[0.18em] text-stone-500 uppercase">
             Account Pool
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">号池管理</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">号池管理</h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           <Button
             variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
+            className="h-10 rounded-xl border-stone-200 bg-white/80 px-3 text-stone-700 hover:bg-white sm:px-4"
             onClick={() => void loadAccounts()}
             disabled={isLoading || isRefreshing || isDeleting}
           >
@@ -757,12 +757,13 @@ function AccountsPageContent() {
           </Button>
           <Button
             variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
+            className="h-10 rounded-xl border-stone-200 bg-white/80 px-3 text-stone-700 hover:bg-white sm:px-4"
             onClick={() => void handleRefreshAccounts(accounts.map((item) => item.access_token))}
             disabled={isLoading || isRefreshing || isDeleting || accounts.length === 0}
           >
             <RefreshCw className={cn("size-4", isRefreshing ? "animate-spin" : "")} />
-            一键刷新所有账号信息和额度
+            <span className="hidden sm:inline">刷新全部信息和额度</span>
+            <span className="sm:hidden">刷新全部</span>
           </Button>
           <AccountImportDialog
             disabled={isLoading || isRefreshing || isDeleting}
@@ -774,12 +775,13 @@ function AccountsPageContent() {
           />
           <Button
             variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
+            className="h-10 rounded-xl border-stone-200 bg-white/80 px-3 text-stone-700 hover:bg-white sm:px-4"
             onClick={() => downloadTokens(accounts)}
             disabled={accounts.length === 0}
           >
             <Download className="size-4" />
-            导出全部 Token
+            <span className="hidden sm:inline">导出全部 Token</span>
+            <span className="sm:hidden">导出</span>
           </Button>
         </div>
       </section>
@@ -876,18 +878,18 @@ function AccountsPageContent() {
       </Dialog>
 
       <section className="space-y-3">
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
           {metricCards.map((item) => {
             const Icon = item.icon;
             const value = (refreshSummary ?? summary)[item.key];
             return (
               <Card key={item.key} className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
-                <CardContent className="p-4">
-                  <div className="mb-4 flex items-start justify-between">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="mb-2 flex items-start justify-between sm:mb-4">
                     <span className="text-xs font-medium text-stone-400">{item.label}</span>
                     <Icon className="size-4 text-stone-400" />
                   </div>
-                  <div className={cn("text-[1.75rem] font-semibold tracking-tight", item.color)}>
+                  <div className={cn("text-2xl font-semibold tracking-tight sm:text-[1.75rem]", item.color)}>
                     <span className={typeof value === "number" ? "" : "text-[1.1rem]"}>
                       {typeof value === "number" ? formatCompact(value) : value}
                     </span>
@@ -898,18 +900,18 @@ function AccountsPageContent() {
           })}
         </div>
         <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
-          <CardContent className="p-4">
-            <div className="mb-3 text-sm font-medium text-stone-700">
-              系统可用模型
+          <CardContent className="p-3 sm:p-4">
+            <div className="mb-2 text-sm font-medium text-stone-700 sm:mb-3">
+              可用模型
               <span className="ml-1 text-stone-400">({availableModels.length})</span>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1 sm:max-h-none sm:gap-2">
               {availableModels.length > 0 ? (
                 availableModels.map((model) => (
                   <button
                     key={model.id}
                     type="button"
-                    className="inline-flex cursor-pointer items-center rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
+                    className="inline-flex cursor-pointer items-center rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[11px] font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50 sm:px-2.5 sm:py-1 sm:text-xs"
                     onClick={() => {
                       void navigator.clipboard.writeText(model.id);
                       toast.success("模型名已复制");
@@ -944,8 +946,8 @@ function AccountsPageContent() {
             </Badge>
           </div>
 
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <div className="relative min-w-[260px]">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_150px] lg:flex lg:items-center">
+            <div className="relative min-w-0 lg:min-w-[260px]">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400" />
               <Input
                 value={query}
@@ -964,7 +966,7 @@ function AccountsPageContent() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-10 w-full rounded-xl border-stone-200 bg-white/85 lg:w-[150px]">
+              <SelectTrigger className="h-10 w-full rounded-xl border-stone-200 bg-white/85">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -982,7 +984,7 @@ function AccountsPageContent() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-10 w-full rounded-xl border-stone-200 bg-white/85 lg:w-[150px]">
+              <SelectTrigger className="h-10 w-full rounded-xl border-stone-200 bg-white/85">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1017,39 +1019,42 @@ function AccountsPageContent() {
           )}
         >
           <CardContent className="space-y-0 p-0">
-            <div className="flex flex-col gap-3 border-b border-stone-100 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-stone-500">
+            <div className="flex flex-col gap-3 border-b border-stone-100 px-3 py-3 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="grid grid-cols-2 gap-2 text-sm text-stone-500 sm:flex sm:flex-wrap sm:items-center">
                 <Button
                   variant="ghost"
-                  className="h-8 rounded-lg px-3 text-stone-500 hover:bg-stone-100"
+                  className="h-8 justify-start rounded-lg px-2 text-xs text-stone-500 hover:bg-stone-100 sm:px-3 sm:text-sm"
                   onClick={() => void handleRefreshAccounts(selectedTokens)}
                   disabled={selectedTokens.length === 0 || isRefreshing}
                 >
                   {isRefreshing ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  刷新选中账号信息和额度
+                  <span className="hidden sm:inline">刷新选中账号信息和额度</span>
+                  <span className="sm:hidden">刷新选中</span>
                 </Button>
                 <Button
                   variant="ghost"
-                  className="h-8 rounded-lg px-3 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                  className="h-8 justify-start rounded-lg px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 sm:px-3 sm:text-sm"
                   onClick={() => void handleReLogin(selectedTokens)}
                   disabled={selectedTokens.length === 0 || isRelogining}
                   title="尝试密码登录恢复账号"
                 >
                   {isRelogining ? <LoaderCircle className="size-4 animate-spin" /> : <LogIn className="size-4" />}
-                  尝试恢复异常账号
+                  <span className="hidden sm:inline">尝试恢复异常账号</span>
+                  <span className="sm:hidden">恢复异常</span>
                 </Button>
                 <Button
                   variant="ghost"
-                  className="h-8 rounded-lg px-3 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
+                  className="h-8 justify-start rounded-lg px-2 text-xs text-rose-500 hover:bg-rose-50 hover:text-rose-600 sm:px-3 sm:text-sm"
                   onClick={() => void handleDeleteTokens(abnormalTokens)}
                   disabled={abnormalTokens.length === 0 || isDeleting}
                 >
                   {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                  移除异常账号
+                  <span className="hidden sm:inline">移除异常账号</span>
+                  <span className="sm:hidden">移除异常</span>
                 </Button>
                 <Button
                   variant="ghost"
-                  className="h-8 rounded-lg px-3 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
+                  className="h-8 justify-start rounded-lg px-2 text-xs text-rose-500 hover:bg-rose-50 hover:text-rose-600 sm:px-3 sm:text-sm"
                   onClick={() => void handleDeleteTokens(selectedTokens)}
                   disabled={selectedTokens.length === 0 || isDeleting}
                 >

@@ -83,8 +83,9 @@ login_limiter = IPRateLimiter(limit=15, window_seconds=60.0)
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=2, max_length=50)
-    password: str = Field(..., min_length=6, max_length=50)
+    password: str = Field(...)
     reg_code: str = Field(...)
+    email: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -100,8 +101,14 @@ class UpdateQuotaRequest(BaseModel):
     quota_limit: int = Field(..., ge=0)
 
 
+class UpdateQuotaPolicyRequest(BaseModel):
+    quota_mode: str = Field(..., min_length=1, max_length=16)
+    daily_quota_limit: int = Field(..., ge=0)
+    fixed_quota_limit: int = Field(..., ge=0)
+
+
 class ResetPasswordRequest(BaseModel):
-    password: str = Field(..., min_length=6, max_length=50)
+    password: str = Field(...)
 
 
 class ChangeRoleRequest(BaseModel):
@@ -149,6 +156,7 @@ def create_router() -> APIRouter:
                 username=body.username,
                 password=body.password,
                 reg_code=body.reg_code,
+                email=body.email,
             )
             return {"status": "ok", "user": user}
         except ValueError as exc:
@@ -156,7 +164,7 @@ def create_router() -> APIRouter:
 
     @router.post("/api/auth/login")
     async def login(body: LoginRequest, request: Request):
-        """登录接口，换取专属 API Key"""
+        """登录接口：用户输入的登录密钥同时也是 API Key"""
         client_ip = get_client_ip(request)
         if not login_limiter.is_allowed(client_ip):
             raise HTTPException(status_code=429, detail={"error": "登录请求过于频繁，请稍后再试"})
@@ -172,30 +180,40 @@ def create_router() -> APIRouter:
         identity = require_identity(authorization)
         user = user_service.get_user_by_id(identity["id"])
         if user is None:
+            display_name = identity.get("name", "Administrator")
             return {
                 "id": identity["id"],
-                "username": identity.get("name", "Administrator"),
+                "username": display_name,
+                "display_name": display_name,
                 "role": identity.get("role", "admin"),
                 "is_legacy": True,
-                "display_name": identity.get("name", "Administrator"),
+                "quota_mode": "daily",
+                "daily_quota_limit": 0,
+                "daily_quota_used": 0,
+                "daily_quota_remaining": 0,
+                "fixed_quota_limit": 0,
+                "fixed_quota_used": 0,
+                "fixed_quota_remaining": 0,
                 "quota_limit": 0,
                 "quota_used": 0,
                 "quota_remaining": 0,
+                "quota_usage_rate": 0,
+                "quota_summary": "管理员密钥不计个人额度",
                 "status": "legacy",
+                "created_at": "",
+                "last_login_at": "",
+                "last_active_date": "",
             }
-        quota_limit = int(user.get("quota_limit", 10))
-        quota_used = int(user.get("quota_used", 0))
-        quota_remaining = max(quota_limit - quota_used, 0)
+        quota = user_service._quota_snapshot(user)
         return {
             "id": user["id"],
             "username": user["username"],
             "display_name": user["username"],
             "role": user["role"],
             "status": user.get("status") or "active",
-            "quota_limit": quota_limit,
-            "quota_used": quota_used,
-            "quota_remaining": quota_remaining,
-            "quota_usage_rate": round(quota_used / quota_limit, 4) if quota_limit > 0 else 0,
+            "email": user.get("email") or "",
+            "is_legacy": False,
+            **quota,
             "created_at": user.get("created_at") or "",
             "last_login_at": user.get("last_login_at") or "",
             "last_active_date": user.get("last_active_date") or "",
@@ -318,7 +336,7 @@ def create_router() -> APIRouter:
         body: ResetPasswordRequest,
         authorization: str | None = Header(default=None),
     ):
-        """管理员强制重置用户密码"""
+        """管理员强制重置用户登录密钥"""
         require_admin(authorization)
         try:
             _validate_pwd(body.password)
@@ -342,6 +360,34 @@ def create_router() -> APIRouter:
             return {"status": "ok"}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+
+    @router.post("/api/admin/users/{user_id}/quota-policy")
+    async def admin_update_quota_policy(
+        user_id: str,
+        body: UpdateQuotaPolicyRequest,
+        authorization: str | None = Header(default=None),
+    ):
+        """管理员更新特定用户的配额策略"""
+        require_admin(authorization)
+        try:
+            if not user_service.update_user_quota_policy(
+                user_id,
+                body.quota_mode,
+                body.daily_quota_limit,
+                body.fixed_quota_limit,
+            ):
+                raise HTTPException(status_code=404, detail={"error": "用户不存在"})
+            return {"status": "ok"}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+
+    @router.delete("/api/admin/users/{user_id}")
+    async def admin_delete_user(user_id: str, authorization: str | None = Header(default=None)):
+        """删除自助注册用户"""
+        require_admin(authorization)
+        if not user_service.delete_user(user_id):
+            raise HTTPException(status_code=404, detail={"error": "用户不存在"})
+        return {"status": "ok"}
 
     # ================= 管理员：注册码/邀请码分发管理 =================
 

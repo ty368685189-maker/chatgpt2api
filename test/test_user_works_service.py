@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import uuid
 from datetime import datetime, timedelta
-from services.user_service import UserService
+from services.user_service import UserService, _api_key_hash
 from services.works_service import WorksService
 from services.storage.json_storage import JSONStorageBackend
 from services.config import config
@@ -48,18 +48,15 @@ def test_user_service_registration_and_login(mock_user_service):
     user1 = mock_user_service.register_user(
         username=username1,
         password="password123",
-        email="user1@example.com",
         reg_code=code_info["code"]
     )
     assert user1["username"] == username1
     assert user1["quota_limit"] == 15
-    assert user1["email"] == "user1@example.com"
     assert "api_key" not in user1
 
     user2 = mock_user_service.register_user(
         username=username2,
         password="password456",
-        email=None,
         reg_code=code_info["code"]
     )
     assert user2["username"] == username2
@@ -68,7 +65,6 @@ def test_user_service_registration_and_login(mock_user_service):
         mock_user_service.register_user(
             username=username3,
             password="password789",
-            email=None,
             reg_code=code_info["code"]
         )
 
@@ -76,7 +72,7 @@ def test_user_service_registration_and_login(mock_user_service):
     assert login_res["id"] == user1["id"]
     assert "api_key" not in login_res
 
-    with pytest.raises(ValueError, match="用户名或密码错误"):
+    with pytest.raises(ValueError, match="用户名或登录密钥错误"):
         mock_user_service.login_user(username1, "wrong_password")
 
 
@@ -86,7 +82,6 @@ def test_user_quota_limits(mock_user_service):
     user = mock_user_service.register_user(
         username=username,
         password="password123",
-        email=None,
         reg_code=code_info["code"]
     )
 
@@ -102,28 +97,175 @@ def test_user_quota_limits(mock_user_service):
         mock_user_service.verify_quota_and_deduct(user_id)
 
 
+def test_login_key_must_be_unique_for_api_identity(mock_user_service):
+    code_info = mock_user_service.generate_reg_code(quota_limit=10, max_uses=3)
+    user1 = mock_user_service.register_user(
+        username=f"key_a_{uuid.uuid4().hex[:6]}",
+        password="sameKey123",
+        reg_code=code_info["code"],
+    )
+
+    with pytest.raises(ValueError, match="登录密钥已被其他用户使用"):
+        mock_user_service.register_user(
+            username=f"key_b_{uuid.uuid4().hex[:6]}",
+            password="sameKey123",
+            reg_code=code_info["code"],
+        )
+
+    api_user = mock_user_service.get_user_by_api_key_hash(_api_key_hash("sameKey123"))
+    assert api_user is not None
+    assert api_user["id"] == user1["id"]
+
+
+def test_reset_login_key_cannot_reuse_another_users_key(mock_user_service):
+    code_info = mock_user_service.generate_reg_code(quota_limit=10, max_uses=2)
+    user1 = mock_user_service.register_user(
+        username=f"reset_a_{uuid.uuid4().hex[:6]}",
+        password="firstKey123",
+        reg_code=code_info["code"],
+    )
+    user2 = mock_user_service.register_user(
+        username=f"reset_b_{uuid.uuid4().hex[:6]}",
+        password="secondKey123",
+        reg_code=code_info["code"],
+    )
+
+    with pytest.raises(ValueError, match="登录密钥已被其他用户使用"):
+        mock_user_service.reset_user_password(user2["id"], "firstKey123")
+
+    assert mock_user_service.reset_user_password(user2["id"], "thirdKey123") is True
+    assert mock_user_service.get_user_by_api_key_hash(_api_key_hash("firstKey123"))["id"] == user1["id"]
+    assert mock_user_service.get_user_by_api_key_hash(_api_key_hash("thirdKey123"))["id"] == user2["id"]
+
+
+def test_duplicate_api_key_hash_is_rejected_as_ambiguous_identity(mock_user_service):
+    code_info = mock_user_service.generate_reg_code(quota_limit=10, max_uses=2)
+    user1 = mock_user_service.register_user(
+        username=f"dup_a_{uuid.uuid4().hex[:6]}",
+        password="safeKey123",
+        reg_code=code_info["code"],
+    )
+    user2 = mock_user_service.register_user(
+        username=f"dup_b_{uuid.uuid4().hex[:6]}",
+        password="otherKey123",
+        reg_code=code_info["code"],
+    )
+
+    users = mock_user_service._load_users()
+    duplicate_hash = _api_key_hash("safeKey123")
+    for user in users:
+        if user["id"] in {user1["id"], user2["id"]}:
+            user["api_key_hash"] = duplicate_hash
+    mock_user_service._save_users(users)
+
+    assert mock_user_service.get_user_by_api_key_hash(duplicate_hash) is None
+
+
 def test_unlimited_quota_skips_deduction(mock_user_service):
     username = f"uq_unlimited_{uuid.uuid4().hex[:6]}"
     code_info = mock_user_service.generate_reg_code(quota_limit=2, max_uses=1)
     user = mock_user_service.register_user(
         username=username,
         password="password123",
-        email=None,
         reg_code=code_info["code"]
     )
 
     users = mock_user_service._load_users()
     db_user = next(u for u in users if u["id"] == user["id"])
-    db_user["quota_limit"] = 0
-    db_user["quota_used"] = 9
+    db_user["quota_mode"] = "fixed"
+    db_user["fixed_quota_limit"] = 0
+    db_user["fixed_quota_used"] = 9
     mock_user_service._save_users(users)
 
     mock_user_service.verify_quota_and_deduct(db_user["id"])
 
     updated_users = mock_user_service._load_users()
     updated_user = next(u for u in updated_users if u["id"] == db_user["id"])
-    assert updated_user["quota_used"] == 9
-    assert updated_user["quota_limit"] == 0
+    assert updated_user["fixed_quota_used"] == 9
+    assert updated_user["fixed_quota_limit"] == 0
+
+
+def test_daily_quota_resets_on_new_day(mock_user_service):
+    code_info = mock_user_service.generate_reg_code(quota_limit=3, max_uses=1)
+    user = mock_user_service.register_user(
+        username=f"daily_{uuid.uuid4().hex[:6]}",
+        password="dailyKey123",
+        reg_code=code_info["code"],
+    )
+
+    users = mock_user_service._load_users()
+    db_user = next(u for u in users if u["id"] == user["id"])
+    db_user["quota_mode"] = "daily"
+    db_user["daily_quota_limit"] = 2
+    db_user["daily_quota_used"] = 1
+    db_user["daily_last_reset_date"] = "2000-01-01"
+    mock_user_service._save_users(users)
+
+    mock_user_service.verify_quota_and_deduct(db_user["id"])
+
+    updated_users = mock_user_service._load_users()
+    updated_user = next(u for u in updated_users if u["id"] == db_user["id"])
+    assert updated_user["daily_quota_used"] == 1
+    assert updated_user["daily_quota_limit"] == 2
+
+
+def test_fixed_quota_counts_total_usage(mock_user_service):
+    code_info = mock_user_service.generate_reg_code(quota_limit=3, max_uses=1)
+    user = mock_user_service.register_user(
+        username=f"fixed_{uuid.uuid4().hex[:6]}",
+        password="fixedKey123",
+        reg_code=code_info["code"],
+    )
+
+    users = mock_user_service._load_users()
+    db_user = next(u for u in users if u["id"] == user["id"])
+    db_user["quota_mode"] = "fixed"
+    db_user["fixed_quota_limit"] = 2
+    db_user["fixed_quota_used"] = 1
+    mock_user_service._save_users(users)
+
+    mock_user_service.verify_quota_and_deduct(db_user["id"])
+
+    updated_users = mock_user_service._load_users()
+    updated_user = next(u for u in updated_users if u["id"] == db_user["id"])
+    assert updated_user["fixed_quota_used"] == 2
+    with pytest.raises(PermissionError, match="累计生图限额"):
+        mock_user_service.verify_quota_and_deduct(db_user["id"])
+
+
+def test_hybrid_quota_uses_daily_then_fixed(mock_user_service):
+    code_info = mock_user_service.generate_reg_code(quota_limit=3, max_uses=1)
+    user = mock_user_service.register_user(
+        username=f"hybrid_{uuid.uuid4().hex[:6]}",
+        password="hybridKey123",
+        reg_code=code_info["code"],
+    )
+
+    users = mock_user_service._load_users()
+    db_user = next(u for u in users if u["id"] == user["id"])
+    db_user["quota_mode"] = "hybrid"
+    db_user["daily_quota_limit"] = 2
+    db_user["daily_quota_used"] = 1
+    db_user["fixed_quota_limit"] = 2
+    db_user["fixed_quota_used"] = 1
+    db_user["daily_last_reset_date"] = "2026-06-18"
+    mock_user_service._save_users(users)
+
+    mock_user_service.verify_quota_and_deduct(db_user["id"])
+
+    updated_users = mock_user_service._load_users()
+    updated_user = next(u for u in updated_users if u["id"] == db_user["id"])
+    assert updated_user["daily_quota_used"] == 2
+    assert updated_user["fixed_quota_used"] == 1
+
+    mock_user_service.verify_quota_and_deduct(db_user["id"])
+
+    updated_users = mock_user_service._load_users()
+    updated_user = next(u for u in updated_users if u["id"] == db_user["id"])
+    assert updated_user["daily_quota_used"] == 2
+    assert updated_user["fixed_quota_used"] == 2
+    with pytest.raises(PermissionError, match="累计生图限额"):
+        mock_user_service.verify_quota_and_deduct(db_user["id"])
 
 
 def test_works_and_gallery(mock_works_service):

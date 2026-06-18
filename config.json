@@ -11,7 +11,7 @@
     "info",
     "warning"
   ],
-  "proxy": "socks5://127.0.0.1:7890",
+  "proxy": "",
   "proxy_runtime": {
     "enabled": true,
     "egress_mode": "single_proxy",

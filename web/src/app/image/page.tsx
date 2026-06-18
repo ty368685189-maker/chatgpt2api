@@ -8,6 +8,7 @@ import { ImageComposer } from "@/app/image/components/image-composer";
 import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import webConfig from "@/constants/common-env";
 import {
   createImageEditTask,
   createImageGenerationTask,
@@ -1694,6 +1695,16 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               disabled={conversations.length === 0}
             >
               <Trash2 className="size-4" />
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-stone-200/70 bg-white/80 px-4 py-3 shadow-sm lg:hidden">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-stone-950 dark:text-white">我的生图额度</div>
+              <div className="text-xs text-stone-500 dark:text-stone-400">单独查看，不挤主页面</div>
+            </div>
+            <Button asChild variant="outline" className="rounded-xl border-stone-200 bg-white/90 px-3">
+              <a href="/quota">查看</a>
             </Button>
           </div>
 

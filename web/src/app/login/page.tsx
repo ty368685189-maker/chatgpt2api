@@ -19,7 +19,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [authKey, setAuthKey] = useState("");
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [loginKey, setLoginKey] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { isCheckingAuth } = useRedirectIfAuthenticated();
@@ -60,20 +60,20 @@ export default function LoginPage() {
     }
   };
 
-  const handlePasswordLogin = async () => {
+  const handleLoginKeyLogin = async () => {
     const normUsername = username.trim();
-    const normPassword = password;
-    if (!normUsername || !normPassword) {
-      toast.error("请输入用户名和密码");
+    const normLoginKey = loginKey;
+    if (!normUsername || !normLoginKey) {
+      toast.error("请输入用户名和登录密钥");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const res = await loginUser({ username: normUsername, password: normPassword });
+      const res = await loginUser({ username: normUsername, password: normLoginKey });
       const { user } = res;
       await setStoredAuthSession({
-        key: user.api_key,
+        key: normLoginKey,
         role: user.role as any,
         subjectId: user.id,
         name: user.username,
@@ -81,7 +81,7 @@ export default function LoginPage() {
       toast.success("登录成功");
       router.replace(getDefaultRouteForRole(user.role as any));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "用户名或密码错误";
+      const message = error instanceof Error ? error.message : "用户名或登录密钥错误";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -117,17 +117,17 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <h1 className="text-3xl font-semibold tracking-tight text-stone-950 dark:text-white">欢迎回来</h1>
-              <p className="text-sm leading-6 text-stone-500 dark:text-stone-400">请选择登录方式以继续使用服务</p>
+              <p className="text-sm leading-6 text-stone-500 dark:text-stone-400">普通用户用登录密钥；管理员也可继续用旧密钥入口</p>
             </div>
           </div>
 
-          <Tabs defaultValue="password" className="w-full">
+          <Tabs defaultValue="login-key" className="w-full">
             <TabsList className="grid h-12 w-full grid-cols-2 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
-              <TabsTrigger value="password" className="rounded-lg py-2 text-sm font-medium transition-all">密码登录</TabsTrigger>
-              <TabsTrigger value="apikey" className="rounded-lg py-2 text-sm font-medium transition-all">旧密钥登录</TabsTrigger>
+              <TabsTrigger value="login-key" className="rounded-lg py-2 text-sm font-medium transition-all">用户登录密钥</TabsTrigger>
+              <TabsTrigger value="apikey" className="rounded-lg py-2 text-sm font-medium transition-all">管理员旧密钥</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="password" className="mt-6 space-y-5">
+            <TabsContent value="login-key" className="mt-6 space-y-5">
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label htmlFor="username" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
@@ -140,7 +140,7 @@ export default function LoginPage() {
                     onChange={(event) => setUsername(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        void handlePasswordLogin();
+                        void handleLoginKeyLogin();
                       }
                     }}
                     placeholder="请输入用户名"
@@ -148,28 +148,31 @@ export default function LoginPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="password" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
-                    密码
+                  <label htmlFor="login-key" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
+                    登录密钥
                   </label>
                   <Input
-                    id="password"
+                    id="login-key"
                     type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    value={loginKey}
+                    onChange={(event) => setLoginKey(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        void handlePasswordLogin();
+                        void handleLoginKeyLogin();
                       }
                     }}
-                    placeholder="请输入密码"
+                    placeholder="请输入登录密钥，也可作为 API Key 使用"
                     className="h-13 rounded-2xl border-stone-200 bg-white px-4 dark:border-stone-700 dark:bg-stone-850"
                   />
+                  <p className="text-xs leading-5 text-stone-500 dark:text-stone-400">
+                    这串密钥同时用于网页登录和 Cherry Studio 等 OpenAI 兼容客户端，请不要发给别人。
+                  </p>
                 </div>
               </div>
 
               <Button
                 className="h-13 w-full rounded-2xl bg-stone-950 text-white hover:bg-stone-800 dark:bg-white dark:text-stone-950 dark:hover:bg-stone-200"
-                onClick={() => void handlePasswordLogin()}
+                onClick={() => void handleLoginKeyLogin()}
                 disabled={isSubmitting}
               >
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin mr-2" /> : null}
@@ -180,7 +183,7 @@ export default function LoginPage() {
             <TabsContent value="apikey" className="mt-6 space-y-5">
               <div className="space-y-2">
                 <label htmlFor="auth-key" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
-                  密钥
+                  管理员旧密钥
                 </label>
                 <div className="relative">
                   <Input
@@ -193,11 +196,14 @@ export default function LoginPage() {
                         void handleKeyLogin();
                       }
                     }}
-                    placeholder="请输入 sk-..."
+                    placeholder="请输入部署配置里的管理员密钥"
                     className="h-13 rounded-2xl border-stone-200 bg-white pl-10 pr-4 dark:border-stone-700 dark:bg-stone-850"
                   />
                   <KeyRound className="absolute left-3.5 top-4 size-4.5 text-stone-400" />
                 </div>
+                <p className="text-xs leading-5 text-stone-500 dark:text-stone-400">
+                  这个入口主要兼容旧版管理员密钥，普通用户请使用左侧“用户登录密钥”。
+                </p>
               </div>
 
               <Button

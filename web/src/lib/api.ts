@@ -189,8 +189,6 @@ export type SettingsConfig = {
 export type BackupInclude = {
   config: boolean;
   register: boolean;
-  cpa: boolean;
-  sub2api: boolean;
   logs: boolean;
   image_tasks: boolean;
   accounts_snapshot: boolean;
@@ -307,15 +305,6 @@ export type LoginResponse = {
   role: AuthRole;
   subject_id: string;
   name: string;
-};
-
-export type UserKey = {
-  id: string;
-  name: string;
-  role: "user";
-  enabled: boolean;
-  created_at: string | null;
-  last_used_at: string | null;
 };
 
 export type OutlookPoolStats = {
@@ -718,30 +707,6 @@ export async function deleteSystemLogs(ids: string[]) {
   });
 }
 
-export async function fetchUserKeys() {
-  return httpRequest<{ items: UserKey[] }>("/api/auth/users");
-}
-
-export async function createUserKey(name: string) {
-  return httpRequest<{ item: UserKey; key: string; items: UserKey[] }>("/api/auth/users", {
-    method: "POST",
-    body: { name },
-  });
-}
-
-export async function updateUserKey(keyId: string, updates: { enabled?: boolean; name?: string; key?: string }) {
-  return httpRequest<{ item: UserKey; items: UserKey[] }>(`/api/auth/users/${keyId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteUserKey(keyId: string) {
-  return httpRequest<{ items: UserKey[] }>(`/api/auth/users/${keyId}`, {
-    method: "DELETE",
-  });
-}
-
 export async function fetchRegisterConfig() {
   return httpRequest<{ register: RegisterConfig }>("/api/register");
 }
@@ -770,172 +735,6 @@ export async function resetOutlookPool(scope: "all" | "failed" | "unused" = "all
     method: "POST",
     body: { scope },
   });
-}
-
-// ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
-
-export type CPAPool = {
-  id: string;
-  name: string;
-  base_url: string;
-  import_job?: CPAImportJob | null;
-};
-
-export type CPARemoteFile = {
-  name: string;
-  email: string;
-};
-
-export type CPAImportJob = {
-  job_id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  created_at: string;
-  updated_at: string;
-  total: number;
-  completed: number;
-  added: number;
-  skipped: number;
-  refreshed: number;
-  failed: number;
-  errors: Array<{ name: string; error: string }>;
-};
-
-export async function fetchCPAPools() {
-  return httpRequest<{ pools: CPAPool[] }>("/api/cpa/pools");
-}
-
-export async function createCPAPool(pool: { name: string; base_url: string; secret_key: string }) {
-  return httpRequest<{ pool: CPAPool; pools: CPAPool[] }>("/api/cpa/pools", {
-    method: "POST",
-    body: pool,
-  });
-}
-
-export async function updateCPAPool(
-  poolId: string,
-  updates: { name?: string; base_url?: string; secret_key?: string },
-) {
-  return httpRequest<{ pool: CPAPool; pools: CPAPool[] }>(`/api/cpa/pools/${poolId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteCPAPool(poolId: string) {
-  return httpRequest<{ pools: CPAPool[] }>(`/api/cpa/pools/${poolId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function fetchCPAPoolFiles(poolId: string) {
-  return httpRequest<{ pool_id: string; files: CPARemoteFile[] }>(`/api/cpa/pools/${poolId}/files`);
-}
-
-export async function startCPAImport(poolId: string, names: string[]) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/cpa/pools/${poolId}/import`, {
-    method: "POST",
-    body: { names },
-  });
-}
-
-export async function fetchCPAPoolImportJob(poolId: string) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/cpa/pools/${poolId}/import`);
-}
-
-// ── Sub2API ────────────────────────────────────────────────────────
-
-export type Sub2APIServer = {
-  id: string;
-  name: string;
-  base_url: string;
-  email: string;
-  has_api_key: boolean;
-  group_id: string;
-  import_job?: CPAImportJob | null;
-};
-
-export type Sub2APIRemoteAccount = {
-  id: string;
-  name: string;
-  email: string;
-  plan_type: string;
-  status: string;
-  expires_at: string;
-  has_refresh_token: boolean;
-};
-
-export type Sub2APIRemoteGroup = {
-  id: string;
-  name: string;
-  description: string;
-  platform: string;
-  status: string;
-  account_count: number;
-  active_account_count: number;
-};
-
-export async function fetchSub2APIServers() {
-  return httpRequest<{ servers: Sub2APIServer[] }>("/api/sub2api/servers");
-}
-
-export async function createSub2APIServer(server: {
-  name: string;
-  base_url: string;
-  email: string;
-  password: string;
-  api_key: string;
-  group_id: string;
-}) {
-  return httpRequest<{ server: Sub2APIServer; servers: Sub2APIServer[] }>("/api/sub2api/servers", {
-    method: "POST",
-    body: server,
-  });
-}
-
-export async function updateSub2APIServer(
-  serverId: string,
-  updates: {
-    name?: string;
-    base_url?: string;
-    email?: string;
-    password?: string;
-    api_key?: string;
-    group_id?: string;
-  },
-) {
-  return httpRequest<{ server: Sub2APIServer; servers: Sub2APIServer[] }>(`/api/sub2api/servers/${serverId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function fetchSub2APIServerGroups(serverId: string) {
-  return httpRequest<{ server_id: string; groups: Sub2APIRemoteGroup[] }>(
-    `/api/sub2api/servers/${serverId}/groups`,
-  );
-}
-
-export async function deleteSub2APIServer(serverId: string) {
-  return httpRequest<{ servers: Sub2APIServer[] }>(`/api/sub2api/servers/${serverId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function fetchSub2APIServerAccounts(serverId: string) {
-  return httpRequest<{ server_id: string; accounts: Sub2APIRemoteAccount[] }>(
-    `/api/sub2api/servers/${serverId}/accounts`,
-  );
-}
-
-export async function startSub2APIImport(serverId: string, accountIds: string[]) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/sub2api/servers/${serverId}/import`, {
-    method: "POST",
-    body: { account_ids: accountIds },
-  });
-}
-
-export async function fetchSub2APIImportJob(serverId: string) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/sub2api/servers/${serverId}/import`);
 }
 
 // ── Upstream proxy ────────────────────────────────────────────────
@@ -1010,12 +809,25 @@ export type CaptchaResponse = {
 export type UserProfileResponse = {
   id: string;
   username: string;
+  display_name?: string;
   role: string;
-  email: string;
+  email?: string;
+  quota_mode?: "daily" | "fixed" | "hybrid";
   quota_limit: number;
   quota_used: number;
-  api_key: string;
+  quota_remaining?: number;
+  quota_usage_rate?: number;
+  daily_quota_limit?: number;
+  daily_quota_used?: number;
+  daily_quota_remaining?: number;
+  fixed_quota_limit?: number;
+  fixed_quota_used?: number;
+  fixed_quota_remaining?: number;
+  quota_summary?: string;
+  status?: string;
   created_at: string;
+  last_login_at?: string;
+  last_active_date?: string;
   is_legacy?: boolean;
 };
 
@@ -1029,7 +841,7 @@ export async function registerUser(body: {
   email?: string;
   reg_code: string;
 }) {
-  return httpRequest<{ status: string; user: any }>("/api/auth/register", {
+  return httpRequest<{ status: string; user: { id: string; username: string; role: string; quota_limit: number; quota_used: number } }>("/api/auth/register", {
     method: "POST",
     body,
   });
@@ -1039,7 +851,7 @@ export async function loginUser(body: {
   username: string;
   password: string;
 }) {
-  return httpRequest<{ status: string; user: UserProfileResponse }>("/api/auth/login", {
+  return httpRequest<{ status: string; user: { id: string; username: string; role: string; status?: string; quota_limit?: number; quota_used?: number; quota_remaining?: number; last_login_at?: string } }>("/api/auth/login", {
     method: "POST",
     body,
   });
@@ -1102,12 +914,24 @@ export type AdminUser = {
   username: string;
   email: string;
   role: string;
+  quota_mode?: "daily" | "fixed" | "hybrid";
   quota_limit: number;
   quota_used: number;
+  quota_remaining?: number;
+  quota_usage_rate?: number;
+  daily_quota_limit?: number;
+  daily_quota_used?: number;
+  daily_quota_remaining?: number;
+  fixed_quota_limit?: number;
+  fixed_quota_used?: number;
+  fixed_quota_remaining?: number;
+  quota_summary?: string;
   last_active_date: string;
+  last_login_at?: string;
   status: "active" | "banned";
-  auth_key_id: string;
-  api_key: string;
+  api_key_hash?: string;
+  api_key?: string;
+  auth_key_id?: string;
   registered_by_code: string;
   created_at: string;
 };
@@ -1145,6 +969,20 @@ export async function adminUpdateUserQuota(userId: string, quotaLimit: number) {
   });
 }
 
+export async function adminUpdateUserQuotaPolicy(
+  userId: string,
+  body: {
+    quota_mode: "daily" | "fixed" | "hybrid";
+    daily_quota_limit: number;
+    fixed_quota_limit: number;
+  },
+) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}/quota-policy`, {
+    method: "POST",
+    body,
+  });
+}
+
 export async function adminResetUserPassword(userId: string, newPassword: string) {
   return httpRequest<{ status: string }>(`/api/admin/users/${userId}/password`, {
     method: "POST",
@@ -1156,6 +994,12 @@ export async function adminChangeUserRole(userId: string, role: string) {
   return httpRequest<{ status: string }>(`/api/admin/users/${userId}/role`, {
     method: "POST",
     body: { role },
+  });
+}
+
+export async function adminDeleteUser(userId: string) {
+  return httpRequest<{ status: string }>(`/api/admin/users/${userId}`, {
+    method: "DELETE",
   });
 }
 

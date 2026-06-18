@@ -16,7 +16,7 @@ import { getDefaultRouteForRole, setStoredAuthSession } from "@/store/auth";
 export default function SignupPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [loginKey, setLoginKey] = useState("");
   const [regCode, setRegCode] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,10 +36,10 @@ export default function SignupPage() {
 
   const handleRegister = async () => {
     const normUsername = username.trim();
-    const normPassword = password;
+    const normLoginKey = loginKey;
     const normRegCode = regCode.trim();
 
-    if (!normUsername || !normPassword || !normRegCode) {
+    if (!normUsername || !normLoginKey || !normRegCode) {
       toast.error("请完整填写所有必填项");
       return;
     }
@@ -49,8 +49,8 @@ export default function SignupPage() {
       return;
     }
 
-    if (normPassword.length < 4) {
-      toast.error("密码长度必须至少为 4 个字符");
+    if (normLoginKey.length < 8) {
+      toast.error("登录密钥长度必须至少为 8 个字符");
       return;
     }
 
@@ -58,12 +58,12 @@ export default function SignupPage() {
     try {
       const res = await registerUser({
         username: normUsername,
-        password: normPassword,
+        password: normLoginKey,
         reg_code: normRegCode,
       });
       const { user } = res;
       await setStoredAuthSession({
-        key: user.api_key,
+        key: normLoginKey,
         role: user.role as any,
         subjectId: user.id,
         name: user.username,
@@ -99,7 +99,7 @@ export default function SignupPage() {
             </div>
             <div className="space-y-2">
               <h1 className="text-3xl font-semibold tracking-tight text-stone-950 dark:text-white">创建新账户</h1>
-              <p className="text-sm leading-6 text-stone-500 dark:text-stone-400">请输入你的注册信息，并绑定激活码</p>
+              <p className="text-sm leading-6 text-stone-500 dark:text-stone-400">创建用户名和登录密钥，再绑定邀请码开通额度</p>
             </div>
           </div>
 
@@ -119,17 +119,20 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="password" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
-                密码 <span className="text-red-500">*</span>
+              <label htmlFor="loginKey" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
+                登录密钥 <span className="text-red-500">*</span>
               </label>
               <Input
-                id="password"
+                id="loginKey"
                 type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="请输入登录密码（6-50 位，字母+数字）"
+                value={loginKey}
+                onChange={(event) => setLoginKey(event.target.value)}
+                placeholder="8-50 位，需同时包含字母和数字"
                 className="h-12 rounded-xl border-stone-200 bg-white px-4 dark:border-stone-700 dark:bg-stone-850"
               />
+              <p className="text-xs leading-5 text-stone-500 dark:text-stone-400">
+                这串密钥以后既用于网页登录，也可填到 Cherry Studio 的 API Key。
+              </p>
             </div>
 
             <div className="space-y-1.5">
