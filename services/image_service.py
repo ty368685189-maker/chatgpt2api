@@ -17,6 +17,7 @@ from services.image_tags_service import load_tags, remove_tags
 from utils.log import logger
 
 THUMBNAIL_SIZE = (320, 320)
+IMAGE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
 def _cleanup_empty_dirs(root: Path) -> None:
@@ -55,6 +56,7 @@ def get_image_response(relative_path: str) -> FileResponse | Response:
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
+        "Cache-Control": IMAGE_CACHE_CONTROL,
     }
     if image_storage_service.has_local(relative_path):
         return FileResponse(_safe_image_path(relative_path), headers=headers)
@@ -109,6 +111,7 @@ def get_thumbnail_response(relative_path: str) -> FileResponse:
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
+        "Cache-Control": IMAGE_CACHE_CONTROL,
     }
     return FileResponse(ensure_thumbnail(relative_path), headers=headers)
 

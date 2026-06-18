@@ -49,16 +49,26 @@ def create_app() -> FastAPI:
     app.include_router(user_api.create_router())
     app.include_router(system.create_router(app_version))
 
+    def _static_headers(path: str) -> dict[str, str]:
+        clean_path = str(path or "")
+        if clean_path.endswith(".html") or clean_path == "":
+            return {"Cache-Control": "no-cache"}
+        if clean_path.startswith("_next/"):
+            return {"Cache-Control": "public, max-age=31536000, immutable"}
+        if clean_path.endswith((".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".woff", ".woff2")):
+            return {"Cache-Control": "public, max-age=31536000, immutable"}
+        return {"Cache-Control": "public, max-age=86400"}
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_web(full_path: str):
         asset = resolve_web_asset(full_path)
         if asset is not None:
-            return FileResponse(asset)
+            return FileResponse(asset, headers=_static_headers(full_path))
         if full_path.strip("/").startswith("_next/"):
             raise HTTPException(status_code=404, detail="Not Found")
         fallback = resolve_web_asset("")
         if fallback is None:
             raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(fallback)
+        return FileResponse(fallback, headers=_static_headers(""))
 
     return app

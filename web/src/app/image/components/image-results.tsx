@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getImageThumbnailUrl } from "@/components/image-thumbnail";
 import { cn } from "@/lib/utils";
 import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
 import webConfig from "@/constants/common-env";
@@ -268,7 +269,8 @@ export function ImageResults({
                             className="break-inside-avoid"
                           >
                             <LazyImage
-                              src={imageSrc}
+                              src={getImageThumbnailUrl(imageSrc)}
+                              fullSrc={imageSrc}
                               alt={`Generated result ${index + 1}`}
                               className="group block aspect-square w-full cursor-zoom-in overflow-hidden rounded-xl sm:aspect-auto"
                               onLoad={(event) => {
@@ -513,8 +515,9 @@ function formatImageDimensions(width: number, height: number) {
   return `${width} x ${height}`;
 }
 
-const LazyImage = memo(function LazyImage({ src, alt, className, onLoad, onOpen }: {
+const LazyImage = memo(function LazyImage({ src, fullSrc, alt, className, onLoad, onOpen }: {
   src: string;
+  fullSrc?: string;
   alt: string;
   className: string;
   onLoad?: (event: React.SyntheticEvent<HTMLImageElement>) => void;
@@ -552,7 +555,17 @@ const LazyImage = memo(function LazyImage({ src, alt, className, onLoad, onOpen 
             src={src}
             alt={alt}
             className="block h-full w-full object-cover transition duration-200 group-hover:brightness-90 sm:h-auto sm:object-contain"
-            onLoad={onLoad}
+            onLoad={(event) => {
+              if (!fullSrc || event.currentTarget.currentSrc === fullSrc) {
+                onLoad?.(event);
+              }
+            }}
+            onError={(event) => {
+              const target = event.currentTarget;
+              if (fullSrc && target.src !== fullSrc) {
+                target.src = fullSrc;
+              }
+            }}
           />
         </button>
       ) : (
