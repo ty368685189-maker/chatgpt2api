@@ -244,7 +244,7 @@ export function RegisterCard() {
                       ) : null}
                       {type === "tempmail_lol" || type === "moemail" || type === "duckmail" || type === "gptmail" || type === "yyds_mail" ? (
                         <div className="space-y-2">
-                          <label className="text-sm text-stone-700">API Key</label>
+                          <label className="text-sm text-stone-700">登录密钥</label>
                           <Input value={String(provider.api_key || "")} onChange={(event) => updateProvider(index, { api_key: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                         </div>
                       ) : null}

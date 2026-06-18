@@ -124,7 +124,7 @@ export default function LoginPage() {
           <Tabs defaultValue="password" className="w-full">
             <TabsList className="grid h-12 w-full grid-cols-2 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
               <TabsTrigger value="password" className="rounded-lg py-2 text-sm font-medium transition-all">密码登录</TabsTrigger>
-              <TabsTrigger value="apikey" className="rounded-lg py-2 text-sm font-medium transition-all">密钥登录</TabsTrigger>
+              <TabsTrigger value="apikey" className="rounded-lg py-2 text-sm font-medium transition-all">旧密钥登录</TabsTrigger>
             </TabsList>
 
             <TabsContent value="password" className="mt-6 space-y-5">

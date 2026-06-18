@@ -127,7 +127,7 @@ export default function SignupPage() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="请输入至少 4 位密码"
+                placeholder="请输入登录密码（6-50 位，字母+数字）"
                 className="h-12 rounded-xl border-stone-200 bg-white px-4 dark:border-stone-700 dark:bg-stone-850"
               />
             </div>

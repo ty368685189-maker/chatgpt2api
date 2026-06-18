@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Any
 
 from services.config import config
-from services.auth_service import auth_service
 
 
 def hash_password(password: str) -> str:
@@ -26,6 +25,26 @@ def verify_password(password: str, hashed: str) -> bool:
         return pw_hash.hex() == hash_hex
     except Exception:
         return False
+
+
+def validate_password(password: str) -> None:
+    """密码要求：6-50位，至少包含字母和数字，不能是常见弱密码"""
+    if len(password) < 6:
+        raise ValueError("密码长度至少为 6 个字符")
+    if len(password) > 50:
+        raise ValueError("密码长度不能超过 50 个字符")
+    has_letter = any(c.isalpha() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    if not (has_letter and has_digit):
+        raise ValueError("密码必须同时包含字母和数字")
+    weak = {"123456", "password", "abc123", "qwerty", "111111", "12345678", "a123456"}
+    if password.lower() in weak:
+        raise ValueError("密码过于简单，请换一个更复杂的密码")
+
+
+def _api_key_hash(password: str) -> str:
+    """SHA-256 快速哈希，用于 API 密钥认证"""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
 class UserService:
@@ -51,7 +70,7 @@ class UserService:
     def _save_reg_codes(self, reg_codes: list[dict[str, Any]]) -> None:
         self._storage.save_reg_codes(reg_codes)
 
-    def register_user(self, username: str, password: str, email: str | None, reg_code: str) -> dict[str, Any]:
+    def register_user(self, username: str, password: str, reg_code: str) -> dict[str, Any]:
         username = username.strip()
         reg_code = reg_code.strip()
         if not username or not password or not reg_code:
@@ -77,11 +96,6 @@ class UserService:
                 self._save_reg_codes(reg_codes)
                 raise ValueError("激活码使用次数已达上限")
 
-            # 注册用户：创建关联 API 密钥
-            # 自动生成在 auth_keys 中
-            key_name = f"user-{username}"
-            key_item, raw_key = auth_service.create_key(role="user", name=key_name)
-
             # 更新激活码使用次数
             code_item["used_count"] = used_count + 1
             if max_uses != -1 and code_item["used_count"] >= max_uses:
@@ -94,14 +108,12 @@ class UserService:
                 "id": user_id,
                 "username": username,
                 "password_hash": hash_password(password),
-                "email": email.strip() if email else "",
                 "role": "user",
                 "quota_limit": int(code_item.get("quota_limit", 10)),
                 "quota_used": 0,
                 "last_active_date": datetime.now().strftime("%Y-%m-%d"),
                 "status": "active",
-                "auth_key_id": key_item["id"],
-                "api_key": raw_key,  # 允许用户在个人中心查看/复制
+                "api_key_hash": _api_key_hash(password),
                 "registered_by_code": reg_code,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
@@ -112,10 +124,8 @@ class UserService:
                 "id": new_user["id"],
                 "username": new_user["username"],
                 "role": new_user["role"],
-                "email": new_user["email"],
                 "quota_limit": new_user["quota_limit"],
                 "quota_used": new_user["quota_used"],
-                "api_key": new_user["api_key"],
             }
 
     def login_user(self, username: str, password: str) -> dict[str, Any]:
@@ -132,28 +142,61 @@ class UserService:
             if user.get("status") == "banned":
                 raise ValueError("账户已被禁用，请联系管理员")
 
-            # 每次登录时，确保其 API Key 在 auth_keys 中仍有效且启用
-            # 如果被管理员禁用，在此处不恢复，直接以 DB 记录为准
+            if not user.get("api_key_hash"):
+                user["api_key_hash"] = _api_key_hash(password)
+            user["last_login_at"] = datetime.now().isoformat()
+            user["last_active_date"] = user["last_login_at"][:10]
+            user.pop("auth_key_id", None)
+            user.pop("api_key", None)
+            self._save_users(users)
+
+            quota_limit = int(user.get("quota_limit", 10))
+            quota_used = int(user.get("quota_used", 0))
             return {
                 "id": user["id"],
                 "username": user["username"],
                 "role": user["role"],
-                "email": user.get("email") or "",
-                "quota_limit": int(user.get("quota_limit", 10)),
-                "quota_used": int(user.get("quota_used", 0)),
-                "api_key": user["api_key"],
+                "status": user.get("status") or "active",
+                "quota_limit": quota_limit,
+                "quota_used": quota_used,
+                "quota_remaining": max(quota_limit - quota_used, 0),
+                "last_login_at": user.get("last_login_at") or "",
             }
 
-    def get_user_by_key_id(self, auth_key_id: str) -> dict[str, Any] | None:
+    def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        """通过用户 id 查找"""
         with self._lock:
             users = self._load_users()
-            return next((u for u in users if u.get("auth_key_id") == auth_key_id), None)
+            return next((u for u in users if u.get("id") == user_id), None)
 
-    def verify_quota_and_deduct(self, auth_key_id: str) -> None:
-        """根据 Key ID 校验用户配额并划扣一次额度"""
+    def get_user_by_api_key_hash(self, key_hash: str) -> dict[str, Any] | None:
         with self._lock:
             users = self._load_users()
-            user = next((u for u in users if u.get("auth_key_id") == auth_key_id), None)
+            return next((u for u in users if u.get("api_key_hash") == key_hash), None)
+
+    def normalize_user_credentials(self, user_id: str) -> bool:
+        """把旧用户收口到统一密码密钥模式：补 api_key_hash，清掉 auth_key_id/api_key。"""
+        with self._lock:
+            users = self._load_users()
+            user = next((u for u in users if u.get("id") == user_id), None)
+            if not user:
+                return False
+            password_hash = str(user.get("password_hash") or "")
+            if not password_hash:
+                return False
+            if "api_key_hash" not in user or not str(user.get("api_key_hash") or "").strip():
+                # 这里无法反推明文密码，只有新注册/重置过密码的用户才会有 api_key_hash
+                return False
+            user.pop("auth_key_id", None)
+            user.pop("api_key", None)
+            self._save_users(users)
+            return True
+
+    def verify_quota_and_deduct(self, user_id: str) -> None:
+        """根据用户身份校验配额并划扣一次额度"""
+        with self._lock:
+            users = self._load_users()
+            user = next((u for u in users if u.get("id") == user_id), None)
             if not user:
                 # 如果是管理员的 Key（或者不是普通自助注册的用户），放行不作限额
                 return
@@ -169,7 +212,15 @@ class UserService:
                 user["quota_used"] = 0
                 user["last_active_date"] = today
 
-            limit = int(user.get("quota_limit", 10))
+            quota_limit_raw = user.get("quota_limit", 10)
+            if quota_limit_raw in {0, "0", "unlimited", "无限", "不限", "无限制"}:
+                self._save_users(users)
+                return
+
+            try:
+                limit = int(quota_limit_raw)
+            except (TypeError, ValueError):
+                limit = 10
             used = int(user.get("quota_used", 0))
 
             if used >= limit:
@@ -178,16 +229,38 @@ class UserService:
             user["quota_used"] = used + 1
             self._save_users(users)
 
+
     # ================= 管理员用户管控 =================
 
-    def list_users(self) -> list[dict[str, Any]]:
+    def list_users(self, q: str = "", status: str = "", role: str = "") -> list[dict[str, Any]]:
+        q = q.strip().lower()
+        status = status.strip().lower()
+        role = role.strip().lower()
         with self._lock:
             users = self._load_users()
-            # 过滤掉敏感的 password_hash
+            sensitive = {"password_hash", "api_key", "api_key_hash", "auth_key_id"}
             result = []
             for u in users:
-                copied = dict(u)
-                copied.pop("password_hash", None)
+                username = str(u.get("username") or "")
+                u_status = str(u.get("status") or "active")
+                u_role = str(u.get("role") or "user")
+                if q and q not in username.lower() and q not in str(u.get("id") or "").lower():
+                    continue
+                if status and status != u_status.lower():
+                    continue
+                if role and role != u_role.lower():
+                    continue
+                quota_limit = int(u.get("quota_limit", 10))
+                quota_used = int(u.get("quota_used", 0))
+                copied = {k: v for k, v in u.items() if k not in sensitive}
+                copied["display_name"] = username
+                copied["status"] = u_status
+                copied["quota_limit"] = quota_limit
+                copied["quota_used"] = quota_used
+                copied["quota_remaining"] = max(quota_limit - quota_used, 0)
+                copied["quota_usage_rate"] = round(quota_used / quota_limit, 4) if quota_limit > 0 else 0
+                copied["last_login_at"] = u.get("last_login_at") or ""
+                copied["last_active_date"] = u.get("last_active_date") or ""
                 result.append(copied)
             return result
 
@@ -199,13 +272,6 @@ class UserService:
                 return False
             user["status"] = "banned"
             self._save_users(users)
-            # 联动同步禁用 auth_keys 中的 Key
-            key_id = user.get("auth_key_id")
-            if key_id:
-                try:
-                    auth_service.update_key(key_id, {"enabled": False})
-                except Exception:
-                    pass
             return True
 
     def unban_user(self, user_id: str) -> bool:
@@ -216,18 +282,11 @@ class UserService:
                 return False
             user["status"] = "active"
             self._save_users(users)
-            # 联动同步启用 auth_keys 中的 Key
-            key_id = user.get("auth_key_id")
-            if key_id:
-                try:
-                    auth_service.update_key(key_id, {"enabled": True})
-                except Exception:
-                    pass
             return True
 
     def update_user_quota(self, user_id: str, quota_limit: int) -> bool:
         if quota_limit < 0:
-            raise ValueError("配额限额不能小于 0")
+            raise ValueError("配额限额不能小于 0，0 表示不限额度")
         with self._lock:
             users = self._load_users()
             user = next((u for u in users if u["id"] == user_id), None)
@@ -259,13 +318,6 @@ class UserService:
                 return False
             user["role"] = role
             self._save_users(users)
-            # 联动同步更新 auth_keys 中的 Key 角色
-            key_id = user.get("auth_key_id")
-            if key_id:
-                try:
-                    auth_service.update_key(key_id, {}, role=role) # 这里可以不做强制修改，只需更新 role
-                except Exception:
-                    pass
             return True
 
     # ================= 管理员注册激活码管理 =================

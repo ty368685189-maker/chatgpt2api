@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from api.support import require_admin, require_identity
 from services.user_service import user_service
+from services.user_service import validate_password as _validate_pwd
 from services.works_service import works_service
 from utils.captcha import generate_captcha
 
@@ -82,8 +83,7 @@ login_limiter = IPRateLimiter(limit=15, window_seconds=60.0)
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=2, max_length=50)
-    password: str = Field(..., min_length=4, max_length=50)
-    email: str | None = None
+    password: str = Field(..., min_length=6, max_length=50)
     reg_code: str = Field(...)
 
 
@@ -101,7 +101,7 @@ class UpdateQuotaRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    password: str = Field(..., min_length=4)
+    password: str = Field(..., min_length=6, max_length=50)
 
 
 class ChangeRoleRequest(BaseModel):
@@ -144,10 +144,10 @@ def create_router() -> APIRouter:
         if not register_limiter.is_allowed(client_ip):
             raise HTTPException(status_code=429, detail={"error": "注册请求过于频繁，请稍后再试"})
         try:
+            _validate_pwd(body.password)
             user = user_service.register_user(
                 username=body.username,
                 password=body.password,
-                email=body.email,
                 reg_code=body.reg_code,
             )
             return {"status": "ok", "user": user}
@@ -170,24 +170,35 @@ def create_router() -> APIRouter:
     async def get_profile(authorization: str | None = Header(default=None)):
         """获取当前登录用户的个人信息及配额"""
         identity = require_identity(authorization)
-        user = user_service.get_user_by_key_id(identity["id"])
+        user = user_service.get_user_by_id(identity["id"])
         if user is None:
-            # 如果是管理员或其他通过原始配置文件登录的账号，返回基础的身份数据
             return {
                 "id": identity["id"],
                 "username": identity.get("name", "Administrator"),
                 "role": identity.get("role", "admin"),
                 "is_legacy": True,
+                "display_name": identity.get("name", "Administrator"),
+                "quota_limit": 0,
+                "quota_used": 0,
+                "quota_remaining": 0,
+                "status": "legacy",
             }
+        quota_limit = int(user.get("quota_limit", 10))
+        quota_used = int(user.get("quota_used", 0))
+        quota_remaining = max(quota_limit - quota_used, 0)
         return {
             "id": user["id"],
             "username": user["username"],
+            "display_name": user["username"],
             "role": user["role"],
-            "email": user.get("email") or "",
-            "quota_limit": int(user.get("quota_limit", 10)),
-            "quota_used": int(user.get("quota_used", 0)),
-            "api_key": user["api_key"],
+            "status": user.get("status") or "active",
+            "quota_limit": quota_limit,
+            "quota_used": quota_used,
+            "quota_remaining": quota_remaining,
+            "quota_usage_rate": round(quota_used / quota_limit, 4) if quota_limit > 0 else 0,
             "created_at": user.get("created_at") or "",
+            "last_login_at": user.get("last_login_at") or "",
+            "last_active_date": user.get("last_active_date") or "",
         }
 
     # ================= 「我的作品」云端持久化模块 =================
@@ -200,7 +211,7 @@ def create_router() -> APIRouter:
     ):
         """获取当前用户的所有生图作品历史"""
         identity = require_identity(authorization)
-        user = user_service.get_user_by_key_id(identity["id"])
+        user = user_service.get_user_by_id(identity["id"])
         user_id = user["id"] if user else "admin"  # 管理员也支持云端存储
         items, total = works_service.list_user_works(user_id, limit=limit, offset=offset)
         return {
@@ -213,7 +224,7 @@ def create_router() -> APIRouter:
     async def delete_user_work(work_id: str, authorization: str | None = Header(default=None)):
         """删除用户的一件作品"""
         identity = require_identity(authorization)
-        user = user_service.get_user_by_key_id(identity["id"])
+        user = user_service.get_user_by_id(identity["id"])
         user_id = user["id"] if user else "admin"
         success = works_service.delete_user_work(user_id, work_id)
         if not success:
@@ -228,7 +239,7 @@ def create_router() -> APIRouter:
     ):
         """发布作品到社区画廊，或从画廊撤销发布"""
         identity = require_identity(authorization)
-        user = user_service.get_user_by_key_id(identity["id"])
+        user = user_service.get_user_by_id(identity["id"])
         user_id = user["id"] if user else "admin"
         success = works_service.toggle_public_work(user_id, work_id, body.is_public)
         if not success:
@@ -260,10 +271,15 @@ def create_router() -> APIRouter:
     # ================= 管理员：用户列表与权限管控 =================
 
     @router.get("/api/admin/users")
-    async def admin_list_users(authorization: str | None = Header(default=None)):
+    async def admin_list_users(
+        authorization: str | None = Header(default=None),
+        q: str = Query(default=""),
+        status: str = Query(default=""),
+        role: str = Query(default=""),
+    ):
         """管理员获取所有用户列表"""
         require_admin(authorization)
-        return {"items": user_service.list_users()}
+        return {"items": user_service.list_users(q=q, status=status, role=role)}
 
     @router.post("/api/admin/users/{user_id}/ban")
     async def admin_ban_user(user_id: str, authorization: str | None = Header(default=None)):
@@ -292,7 +308,7 @@ def create_router() -> APIRouter:
         try:
             if not user_service.update_user_quota(user_id, body.quota_limit):
                 raise HTTPException(status_code=404, detail={"error": "用户不存在"})
-            return {"status": "ok"}
+            return {"status": "ok", "quota_limit": body.quota_limit}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
@@ -305,6 +321,7 @@ def create_router() -> APIRouter:
         """管理员强制重置用户密码"""
         require_admin(authorization)
         try:
+            _validate_pwd(body.password)
             if not user_service.reset_user_password(user_id, body.password):
                 raise HTTPException(status_code=404, detail={"error": "用户不存在"})
             return {"status": "ok"}

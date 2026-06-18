@@ -280,7 +280,7 @@ class ImageTaskService:
             try:
                 from services.user_service import user_service
                 from services.works_service import works_service
-                user = user_service.get_user_by_key_id(identity.get("id"))
+                user = user_service.get_user_by_id(str(identity.get("id") or ""))
                 user_id = user["id"] if user else "admin"
                 urls = _collect_image_urls(data)
                 if urls:

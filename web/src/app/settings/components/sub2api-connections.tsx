@@ -231,7 +231,7 @@ export function Sub2APIConnections() {
         return;
       }
     } else if (!editingServer && !formApiKey.trim()) {
-      toast.error("请输入 Admin API Key");
+      toast.error("请输入管理员密钥");
       return;
     }
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from threading import Event, Thread
+from typing import TypedDict
 
 from fastapi import HTTPException, Request
 
@@ -13,6 +14,12 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 WEB_DIST_DIR = BASE_DIR / "web_dist"
 
 
+class Identity(TypedDict):
+    id: str
+    name: str
+    role: str
+
+
 def extract_bearer_token(authorization: str | None) -> str:
     scheme, _, value = str(authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not value.strip():
@@ -20,24 +27,37 @@ def extract_bearer_token(authorization: str | None) -> str:
     return value.strip()
 
 
-def _legacy_admin_identity(token: str) -> dict[str, object] | None:
+def _legacy_admin_identity(token: str) -> Identity | None:
     auth_key = str(config.auth_key or "").strip()
     if auth_key and token == auth_key:
-        return {"id": "admin", "name": "管理员", "role": "admin"}
+        return Identity(id="admin", name="管理员", role="admin")
     return None
 
 
-def require_identity(authorization: str | None) -> dict[str, object]:
+def require_identity(authorization: str | None) -> Identity:
+    from services.user_service import _api_key_hash, user_service
+
     token = extract_bearer_token(authorization)
-    identity = _legacy_admin_identity(token) or auth_service.authenticate(token)
+    identity = _legacy_admin_identity(token)
+    if identity is None:
+        user = user_service.get_user_by_api_key_hash(_api_key_hash(token))
+        if user and user.get("status") != "banned":
+            identity = Identity(id=str(user["id"]), name=str(user["username"]), role=str(user.get("role", "user")))
+    if identity is None:
+        legacy_identity = auth_service.authenticate(token)
+        if legacy_identity is not None:
+            identity = Identity(
+                id=str(legacy_identity.get("id", "")),
+                name=str(legacy_identity.get("name", "")),
+                role=str(legacy_identity.get("role", "user")),
+            )
     if identity is None:
         raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
-    # Check if user is banned
     try:
-        from services.user_service import user_service
-        user = user_service.get_user_by_key_id(identity["id"])
-        if user and user.get("status") == "banned":
-            raise HTTPException(status_code=403, detail={"error": "您的账户已被管理员封禁，无法使用服务"})
+        if identity.get("id") != "admin":
+            user = user_service.get_user_by_api_key_hash(_api_key_hash(token))
+            if user and user.get("status") == "banned":
+                raise HTTPException(status_code=403, detail={"error": "您的账户已被管理员封禁，无法使用服务"})
     except HTTPException:
         raise
     except Exception:
@@ -49,7 +69,7 @@ def require_auth_key(authorization: str | None) -> None:
     require_identity(authorization)
 
 
-def require_admin(authorization: str | None) -> dict[str, object]:
+def require_admin(authorization: str | None) -> Identity:
     identity = require_identity(authorization)
     if identity.get("role") != "admin":
         raise HTTPException(status_code=403, detail={"error": "需要管理员权限才能执行这个操作"})

@@ -72,7 +72,7 @@ function formatDateTime(value?: string | null) {
 export function UserKeysCard() {
   const [activeTab, setActiveTab] = useState("api-keys");
 
-  // === 1. API Keys State ===
+  // === 1. 用户密钥状态 ===
   const [keysItems, setKeysItems] = useState<UserKey[]>([]);
   const [isLoadingKeys, setIsLoadingKeys] = useState(false);
   const [isKeyCreateOpen, setIsKeyCreateOpen] = useState(false);
@@ -106,6 +106,8 @@ export function UserKeysCard() {
   const [resetPwdUser, setResetPwdUser] = useState<AdminUser | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [isResettingUserPwd, setIsResettingUserPwd] = useState(false);
+  const [usersSortMode, setUsersSortMode] = useState<"recent" | "usage" | "status">("recent");
+  const [usersSummary, setUsersSummary] = useState({ total: 0, active: 0, banned: 0, admins: 0, quotaUsed: 0, quotaLimit: 0 });
 
   // === Actions ===
   const handleCopy = async (value: string) => {
@@ -117,7 +119,7 @@ export function UserKeysCard() {
     }
   };
 
-  // --- API Keys Methods ---
+  // --- 用户密钥 Methods ---
   const loadKeys = async () => {
     setIsLoadingKeys(true);
     try {
@@ -286,6 +288,20 @@ export function UserKeysCard() {
     applyUserFilter(usersItems, val);
   };
 
+  const sortUsers = (list: AdminUser[]) => {
+    const copy = [...list];
+    if (usersSortMode === "usage") {
+      return copy.sort((a, b) => (b.quota_used || 0) - (a.quota_used || 0));
+    }
+    if (usersSortMode === "status") {
+      return copy.sort((a, b) => {
+        const rank = (u: AdminUser) => (u.status === "banned" ? 0 : u.role === "admin" ? 2 : 1);
+        return rank(b) - rank(a);
+      });
+    }
+    return copy.sort((a, b) => new Date(b.last_active_date || b.created_at).getTime() - new Date(a.last_active_date || a.created_at).getTime());
+  };
+
   const handleToggleUserBan = async (user: AdminUser) => {
     try {
       if (user.status === "banned") {
@@ -357,6 +373,12 @@ export function UserKeysCard() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab === "users-mgmt") {
+      applyUserFilter(usersItems, userSearchQuery);
+    }
+  }, [usersSortMode, usersItems, userSearchQuery, activeTab]);
+
   return (
     <>
       <Card className="rounded-[24px] border-white/85 bg-white/90 shadow-sm dark:border-stone-800/80 dark:bg-stone-900/90">
@@ -378,7 +400,14 @@ export function UserKeysCard() {
                 </TabsTrigger>
               </TabsList>
 
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
+                {activeTab === "users-mgmt" && (
+                  <>
+                    <Button variant="outline" className="h-9.5 rounded-xl px-4 text-xs" onClick={() => setUsersSortMode("recent")}>最近活跃</Button>
+                    <Button variant="outline" className="h-9.5 rounded-xl px-4 text-xs" onClick={() => setUsersSortMode("usage")}>按配额使用</Button>
+                    <Button variant="outline" className="h-9.5 rounded-xl px-4 text-xs" onClick={() => setUsersSortMode("status")}>按状态</Button>
+                  </>
+                )}
                 {activeTab === "api-keys" && (
                   <Button className="h-9.5 rounded-xl bg-stone-950 px-4 text-xs font-medium text-white hover:bg-stone-800 dark:bg-white dark:text-stone-950 dark:hover:bg-stone-200" onClick={() => setIsKeyCreateOpen(true)}>
                     <Plus className="size-4 mr-1.5" />
@@ -628,7 +657,9 @@ export function UserKeysCard() {
                             </td>
                             <td className="px-4 py-3.5">
                               <span className="font-semibold text-stone-800 dark:text-stone-200">{user.quota_used}</span>
-                              <span className="text-stone-400 font-normal"> / {user.quota_limit} 次</span>
+                              <span className="text-stone-400 font-normal">
+                                {user.quota_limit === 0 ? " / 无限制" : ` / ${user.quota_limit} 次`}
+                              </span>
                             </td>
                             <td className="px-4 py-3.5 text-stone-400">
                               {user.created_at ? user.created_at.split(" ")[0] : "—"}
@@ -649,12 +680,30 @@ export function UserKeysCard() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 px-2 text-[10px] text-stone-600 hover:text-stone-900"
+                                disabled={!user.auth_key_id && !(user as any).api_key}
+                                onClick={() => void handleCopy((user as any).api_key || user.auth_key_id || "")}
+                              >
+                                复制密钥
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-[10px] text-stone-600 hover:text-stone-900"
                                 onClick={() => {
                                   setResetPwdUser(user);
                                   setNewPasswordInput("");
                                 }}
                               >
                                 重置密码
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-[10px] text-stone-600 hover:text-stone-900"
+                                disabled={!user.registered_by_code}
+                                onClick={() => handleCopy(user.registered_by_code || "")}
+                              >
+                                复制邀请码
                               </Button>
                               
                               {user.role === "admin" ? (

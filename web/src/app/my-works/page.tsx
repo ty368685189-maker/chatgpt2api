@@ -23,6 +23,10 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { fetchUserWorks, deleteUserWork, shareUserWork, type WorkItem } from "@/lib/api";
 import webConfig from "@/constants/common-env";
 import { ImageThumbnail } from "@/components/image-thumbnail";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 
 const WorkSkeleton = () => (
   <Card className="overflow-hidden rounded-2xl border-stone-200/60 bg-white/70 shadow-sm animate-pulse dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col">
@@ -57,6 +61,7 @@ export default function MyWorksPage() {
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const LIMIT = 12;
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -168,6 +173,7 @@ export default function MyWorksPage() {
   }
 
   return (
+    <>
     <div className="space-y-6 py-4">
       <section className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
@@ -221,7 +227,7 @@ export default function MyWorksPage() {
                   key={work.id} 
                   className="overflow-hidden rounded-2xl border-white/60 bg-white/70 shadow-sm transition-all duration-300 hover:shadow-md dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col group"
                 >
-                  <div className="relative aspect-square w-full overflow-hidden bg-stone-100 dark:bg-stone-950">
+                  <div className="relative aspect-square w-full overflow-hidden bg-stone-100 dark:bg-stone-950 cursor-pointer" onClick={() => firstImg && setPreviewImage(firstImg)}>
                     {firstImg ? (
                       <ImageThumbnail 
                         src={firstImg} 
@@ -402,5 +408,20 @@ export default function MyWorksPage() {
         </div>
       )}
     </div>
+
+      <Dialog open={!!previewImage} onOpenChange={(open) => { if (!open) setPreviewImage(null); }}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 border-0 bg-transparent shadow-none [&>button]:text-white [&>button]:hover:text-white/80">
+          <div className="flex items-center justify-center">
+            {previewImage && (
+              <img
+                src={previewImage}
+                alt="预览"
+                className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

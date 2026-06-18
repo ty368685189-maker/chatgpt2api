@@ -25,6 +25,18 @@ cd chatgpt2api
 docker compose up -d
 ```
 
+如果你修改了前端源码或 `web/` 下内容，建议重新构建发布镜像并重启容器：
+
+```bash
+bash scripts/release.sh
+```
+
+发布后可用下面脚本做一次最小验收：
+
+```bash
+bash scripts/smoke_test.sh
+```
+
 启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
 
 - Web 面板：`http://localhost:3000`
