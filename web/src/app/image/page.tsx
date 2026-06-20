@@ -1625,8 +1625,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <>
-      <section className="mx-auto grid h-[calc(100dvh-6.5rem)] min-h-0 w-full max-w-[1380px] grid-cols-1 gap-2 overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:h-[calc(100dvh-5.25rem)] sm:gap-3 sm:px-3 sm:pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <div className="hidden h-full min-h-0 border-r border-stone-200/70 pr-3 lg:block">
+      <section className="mx-auto grid h-[calc(100dvh-6.5rem)] min-h-0 w-full max-w-[1380px] grid-cols-1 gap-2 overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:h-[calc(100dvh-5.25rem)] sm:gap-3 sm:px-3 sm:pb-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="hidden h-full min-h-0 border-r border-stone-200/60 pr-3 lg:block">
           <ImageSidebar
             conversations={conversations}
             isLoadingHistory={isLoadingHistory}
@@ -1671,39 +1671,54 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           </DialogContent>
         </Dialog>
 
-        <div className="flex min-h-0 flex-col gap-2 sm:gap-4">
-          <div className="flex items-center justify-between gap-2 px-1 lg:hidden">
-            <Button
-              variant="outline"
-              className="h-10 flex-1 rounded-2xl border-stone-200 bg-white/90 text-stone-700 shadow-sm"
-              onClick={() => setIsHistoryOpen(true)}
-            >
-              <History className="mr-2 size-4" />
-              历史记录 ({conversations.length})
-            </Button>
-            <Button
-              className="h-10 rounded-2xl bg-stone-950 text-white shadow-sm"
-              onClick={handleCreateDraft}
-            >
-              <Plus className="size-4" />
-              新建
-            </Button>
-            <Button
-              variant="outline"
-              className="h-10 rounded-2xl border-stone-200 bg-white/85 px-3 text-stone-600 shadow-sm"
-              onClick={openClearHistoryConfirm}
-              disabled={conversations.length === 0}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+        <div className="flex min-h-0 flex-col gap-2 sm:gap-3">
+          <div className="hidden overflow-hidden rounded-[20px] border border-white/70 bg-white/70 px-4 py-3 shadow-[0_14px_40px_-30px_rgba(25,33,61,0.2)] backdrop-blur-sm sm:block sm:px-5 sm:py-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <div className="inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] text-stone-500 uppercase dark:bg-white/8 dark:text-stone-300">
+                  Dual公益站
+                </div>
+                <div className="space-y-0.5">
+                  <h1 className="text-lg font-semibold tracking-tight sm:text-xl">画图</h1>
+                  <p className="max-w-3xl text-xs leading-5 text-stone-500 sm:text-[13px] sm:leading-5">
+                    这里把提示词、参考图、尺寸和生成历史放在一起。你可以直接继续编辑上一轮结果，也可以从头新开一轮。
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="h-8 rounded-full border-stone-200 bg-white/90 px-3 text-stone-700 shadow-sm"
+                  onClick={() => setIsHistoryOpen(true)}
+                >
+                  <History className="mr-1.5 size-3.5" />
+                  历史记录 ({conversations.length})
+                </Button>
+                <Button
+                  className="h-8 rounded-full bg-stone-950 px-3.5 text-white shadow-sm"
+                  onClick={handleCreateDraft}
+                >
+                  <Plus className="size-3.5" />
+                  新建
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 rounded-full border-stone-200 bg-white/85 px-2.5 text-stone-600 shadow-sm"
+                  onClick={openClearHistoryConfirm}
+                  disabled={conversations.length === 0}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 rounded-2xl border border-stone-200/70 bg-white/80 px-4 py-3 shadow-sm lg:hidden">
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-stone-200/70 bg-white/75 px-4 py-2 shadow-sm lg:hidden">
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-stone-950 dark:text-white">我的生图额度</div>
-              <div className="text-xs text-stone-500 dark:text-stone-400">单独查看，不挤主页面</div>
+              <div className="text-sm font-semibold text-stone-950 dark:text-white">额度</div>
+              <div className="text-xs text-stone-500 dark:text-stone-400">单独查看</div>
             </div>
-            <Button asChild variant="outline" className="rounded-xl border-stone-200 bg-white/90 px-3">
+            <Button asChild variant="outline" className="rounded-xl border-stone-200 bg-white/90 px-3 py-1.5">
               <a href="/quota">查看</a>
             </Button>
           </div>
@@ -1712,7 +1727,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             <div
               ref={resultsViewportRef}
               onScroll={handleResultsScroll}
-              className="hide-scrollbar h-full overscroll-contain overflow-y-auto px-1 py-2 sm:px-4 sm:py-4"
+              className="hide-scrollbar h-full overscroll-contain overflow-y-auto px-1 py-1 sm:px-4 sm:py-2"
               style={{ contain: "layout style paint" }}
             >
               <ImageResults
@@ -1736,10 +1751,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               aria-label="滚动到最新消息"
               title="滚动到最新消息"
               onClick={() => scrollResultsToLatest("smooth")}
-              className="absolute bottom-4 left-1/2 z-20 inline-flex size-11 -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-200/60 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 dark:border-white/10 dark:bg-stone-800/95 dark:text-stone-100 dark:shadow-black/40 dark:hover:bg-stone-700"
+              className="absolute bottom-4 left-1/2 z-20 inline-flex size-10 -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-200/60 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 dark:border-white/10 dark:bg-stone-800/95 dark:text-stone-100 dark:shadow-black/40 dark:hover:bg-stone-700"
               style={{ display: "none" }}
             >
-              <ArrowDown className="size-5" />
+              <ArrowDown className="size-4.5" />
             </button>
           </div>
 

@@ -150,8 +150,8 @@ export function TopNav() {
 
   return (
     <>
-      <header className="border-b border-stone-100/50 dark:border-white/10">
-        <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-50 border-b border-stone-100/60 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-stone-950/60">
+        <div className="flex min-h-14 items-center justify-between gap-3 px-3 py-2.5 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center justify-between gap-2 xl:justify-start xl:gap-3">
             <Sheet>
               <SheetTrigger className="inline-flex size-8 items-center justify-center text-stone-700 transition hover:text-stone-950 xl:hidden dark:text-stone-200 dark:hover:text-white">
@@ -160,7 +160,7 @@ export function TopNav() {
               </SheetTrigger>
               <SheetContent side="left">
                 <SheetHeader>
-                  <SheetTitle>chatgpt2api</SheetTitle>
+                  <SheetTitle>Dual公益站</SheetTitle>
                   <span className="text-xs text-stone-500 dark:text-stone-400">{roleLabel} · {displayName}</span>
                 </SheetHeader>
                 <nav className="mt-8 flex flex-col gap-1">
@@ -199,12 +199,17 @@ export function TopNav() {
                 </SheetFooter>
               </SheetContent>
             </Sheet>
-            <Link
-              href="/image"
-              className="shrink-0 py-1 text-[15px] font-bold tracking-tight text-stone-950 transition hover:text-stone-700 dark:text-stone-50 dark:hover:text-white"
-            >
-              chatgpt2api
-            </Link>
+            <div className="flex min-w-0 items-center gap-3">
+              <Link
+                href="/image"
+                className="shrink-0 rounded-full border border-stone-200/70 bg-white/80 px-3 py-1 text-[15px] font-bold tracking-tight text-stone-950 transition hover:border-stone-300 hover:bg-white dark:border-white/10 dark:bg-stone-900/70 dark:text-stone-50 dark:hover:border-white/20 dark:hover:bg-stone-900"
+              >
+                Dual公益站
+              </Link>
+              <span className="hidden rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500 xl:inline-flex dark:bg-white/8 dark:text-stone-300">
+                图片 / 账号 / 设置
+              </span>
+            </div>
           </div>
           <nav className="hide-scrollbar hidden min-w-0 flex-1 justify-center gap-3 overflow-x-auto px-2 xl:flex 2xl:gap-7">
             {canvasHref ? (

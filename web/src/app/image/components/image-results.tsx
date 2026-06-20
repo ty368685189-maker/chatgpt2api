@@ -131,23 +131,23 @@ export function ImageResults({
 
   if (!selectedConversation) {
     return (
-      <div className="flex h-full min-h-[260px] items-center justify-center text-center sm:min-h-[420px]">
-        <div className="w-full max-w-4xl">
+      <div className="flex min-h-[120px] items-center justify-center text-center sm:min-h-[220px]">
+        <div className="max-w-2xl px-4">
           <h1
-            className="text-2xl font-semibold tracking-tight text-stone-950 sm:text-3xl md:text-5xl"
+            className="text-[22px] font-semibold tracking-tight text-stone-950 sm:text-2xl md:text-[38px]"
             style={{
               fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
-            Turn ideas into images
+            先输入一句想法
           </h1>
           <p
-            className="mx-auto mt-3 max-w-[280px] text-sm italic tracking-[0.01em] text-stone-500 sm:mt-4 sm:max-w-none sm:text-[15px]"
+            className="mx-auto mt-2 max-w-[280px] text-xs leading-5 italic tracking-[0.01em] text-stone-500 sm:mt-3 sm:max-w-none sm:text-sm sm:leading-6"
             style={{
               fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
-            在同一窗口里保留本地历史与任务状态，并从已有结果图继续发起新的无状态编辑。
+            先发起一轮生成，后面还能继续改图、重试或复用配置。
           </p>
         </div>
       </div>

@@ -64,20 +64,20 @@ export function ImageSidebar({
   }, []);
   return (
     <aside className="h-full min-h-0 overflow-hidden">
-      <div className="flex h-full min-h-0 flex-col gap-2 py-1 sm:gap-3 sm:py-2">
+      <div className="flex h-full min-h-0 flex-col gap-2 py-1 sm:gap-2.5 sm:py-2">
         {!hideActionButtons && (
           <div className="flex items-center gap-2">
-            <Button className="h-10 flex-1 rounded-xl bg-stone-950 text-white hover:bg-stone-800" onClick={onCreateDraft}>
-              <MessageSquarePlus className="size-4" />
+            <Button className="h-8 flex-1 rounded-full bg-stone-950 text-white hover:bg-stone-800" onClick={onCreateDraft}>
+              <MessageSquarePlus className="size-3.5" />
               新建对话
             </Button>
             <Button
               variant="outline"
-              className="h-10 rounded-xl border-stone-200 bg-white/85 px-3 text-stone-600 hover:bg-white"
+              className="h-8 rounded-full border-stone-200 bg-white/85 px-3 text-stone-600 hover:bg-white"
               onClick={() => void onClearHistory()}
               disabled={conversations.length === 0}
             >
-              <Trash2 className="size-4" />
+              <Trash2 className="size-3.5" />
             </Button>
           </div>
         )}
@@ -94,7 +94,7 @@ export function ImageSidebar({
               正在读取会话记录
             </div>
           ) : conversations.length === 0 ? (
-            <div className="px-2 py-3 text-sm leading-6 text-stone-500">还没有图片记录，输入提示词后会在这里显示。</div>
+            <div className="px-2 py-2 text-sm leading-6 text-stone-500">还没有记录，生成一次后会出现在这里。</div>
           ) : (
             conversations.map((conversation) => {
               const active = conversation.id === selectedConversationId;
@@ -104,7 +104,7 @@ export function ImageSidebar({
                   key={conversation.id}
                   className={cn(
                     "group relative w-full border-l-2 text-left transition",
-                    hideActionButtons ? "px-4 py-3.5" : "px-3 py-2 sm:py-3",
+                    hideActionButtons ? "px-4 py-3" : "px-3 py-2 sm:py-2.5",
                     active
                       ? "border-stone-900 bg-black/[0.035] text-stone-950"
                       : "border-transparent text-stone-700 hover:border-stone-300 hover:bg-white/40",
@@ -133,7 +133,7 @@ export function ImageSidebar({
                         <span className="truncate">{conversation.title}</span>
                       )}
                     </div>
-                    <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-400")}>
+                    <div className={cn("mt-1 text-[11px]", active ? "text-stone-500" : "text-stone-400")}>
                       {conversation.turns.length} 轮 · {formatConversationTime(conversation.updatedAt)}
                     </div>
                     {stats.running > 0 || stats.queued > 0 ? (
