@@ -1742,13 +1742,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     [runConversationQueue],
   );
 
-  const handleCancelImage = useCallback(
-    async (conversationId: string, taskId: string) => {
-      await handleCancelTask(conversationId, taskId);
-    },
-    [handleCancelTask],
-  );
-
   const handleTimeoutRetryContinue = useCallback(async () => {
     if (!timeoutRetry) return;
     const { conversationId, taskId } = timeoutRetry;
@@ -1884,6 +1877,13 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       }
     },
     [cancellingTaskIds, updateConversation],
+  );
+
+  const handleCancelImage = useCallback(
+    async (conversationId: string, taskId: string) => {
+      await handleCancelTask(conversationId, taskId);
+    },
+    [handleCancelTask],
   );
 
   const handleDismissErrors = useCallback(
