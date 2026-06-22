@@ -117,6 +117,65 @@ function normalizeThirdPartyApps(value: unknown): ThirdPartyAppsSettings {
   };
 }
 
+function collectRegisterProviderIssues(provider: Record<string, unknown>): string[] {
+  if (!provider?.enable) return [];
+  const type = String(provider.type || "").trim();
+  const domains = Array.isArray(provider.domain)
+    ? provider.domain.map((item) => String(item).trim()).filter(Boolean)
+    : String(provider.domain || "").trim()
+      ? [String(provider.domain || "").trim()]
+      : [];
+  const issues: string[] = [];
+
+  if (type === "cloudmail_gen") {
+    if (!String(provider.api_base || "").trim()) issues.push("CloudMail URL 不能为空");
+    if (!String(provider.admin_email || "").trim()) issues.push("CloudMail 管理员邮箱不能为空");
+    if (!String(provider.admin_password || "").trim()) issues.push("CloudMail 管理员密码不能为空");
+    if (!domains.length) issues.push("CloudMail 至少要填写一个可用域名");
+  } else if (type === "cloudflare_temp_email") {
+    if (!String(provider.api_base || "").trim()) issues.push("API Base 不能为空");
+    if (!String(provider.admin_password || "").trim()) issues.push("Admin Password 不能为空");
+    if (!domains.length) issues.push("Cloudflare 临时邮箱至少要填写一个域名");
+  } else if (type === "ddg_mail") {
+    if (!String(provider.api_base || provider.cf_api_base || "").trim()) issues.push("DDG 中转 API Base 不能为空");
+    if (!String(provider.ddg_token || "").trim()) issues.push("DDG Token 不能为空");
+    if (!String(provider.cf_inbox_jwt || "").trim()) issues.push("CF Inbox JWT 不能为空");
+    if (!String(provider.admin_password || "").trim() && !String(provider.cf_api_key || "").trim()) issues.push("DDG 中转需要管理员密码或 API Key");
+  } else if (type === "moemail") {
+    if (!String(provider.api_base || "").trim()) issues.push("API Base 不能为空");
+    if (!String(provider.api_key || "").trim()) issues.push("登录密钥不能为空");
+    if (!domains.length) issues.push("MoEmail 至少要填写一个域名");
+  } else if (type === "inbucket") {
+    if (!String(provider.api_base || "").trim()) issues.push("API Base 不能为空");
+    if (!domains.length) issues.push("Inbucket 至少要填写一个基础域名");
+  } else if (type === "duckmail") {
+    if (!String(provider.api_key || "").trim()) issues.push("DuckMail 登录密钥不能为空");
+  } else if (type === "gptmail") {
+    if (!String(provider.api_key || "").trim()) issues.push("GPTMail 登录密钥不能为空");
+  } else if (type === "yyds_mail") {
+    if (!String(provider.api_key || "").trim()) issues.push("YYDS Mail 登录密钥不能为空");
+  } else if (type === "outlook_token") {
+    const raw = String(provider.mailboxes || "");
+    const parsed = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.includes("----") && line.split("----").length >= 4);
+    if (!parsed.length) issues.push("Outlook 邮箱池至少要导入一条 email----password----client_id----refresh_token");
+  }
+
+  return issues;
+}
+
+function collectRegisterIssues(config: RegisterConfig): string[] {
+  const issues: string[] = [];
+  const providers = config.mail.providers || [];
+  providers.forEach((provider, index) => {
+    const providerIssues = collectRegisterProviderIssues(provider as Record<string, unknown>);
+    providerIssues.forEach((item) => issues.push(`第 ${index + 1} 个 provider：${item}`));
+  });
+  return issues;
+}
+
 function normalizeConfig(config: SettingsConfig): SettingsConfig {
   const imageStorage = typeof config.image_storage === "object" && config.image_storage
     ? config.image_storage as ImageStorageSettings
@@ -164,6 +223,8 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     image_retention_days: Number(config.image_retention_days || 30),
     image_poll_timeout_secs: Number(config.image_poll_timeout_secs || 120),
     image_account_concurrency: Number(config.image_account_concurrency || 3),
+    image_task_concurrency: Number(config.image_task_concurrency || 4),
+    image_task_queue_timeout_secs: Number(config.image_task_queue_timeout_secs || 180),
     image_settle_enabled: Boolean(config.image_settle_enabled !== false),
     image_check_before_hit_enabled: Boolean(config.image_check_before_hit_enabled !== false),
     image_settle_secs: Number(config.image_settle_secs || 2.0),
@@ -248,6 +309,8 @@ type SettingsStore = {
   setImageRetentionDays: (value: string) => void;
   setImagePollTimeoutSecs: (value: string) => void;
   setImageAccountConcurrency: (value: string) => void;
+  setImageTaskConcurrency: (value: string) => void;
+  setImageTaskQueueTimeoutSecs: (value: string) => void;
   setImageSettleEnabled: (value: boolean) => void;
   setImageCheckBeforeHitEnabled: (value: boolean) => void;
   setImageSettleSecs: (value: string) => void;
@@ -353,6 +416,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         image_poll_timeout_secs: Math.max(1, Number(config.image_poll_timeout_secs) || 120),
         image_account_concurrency: Math.max(1, Number(config.image_account_concurrency) || 3),
+        image_task_concurrency: Math.max(1, Number(config.image_task_concurrency) || 4),
+        image_task_queue_timeout_secs: Math.max(30, Number(config.image_task_queue_timeout_secs) || 180),
         image_settle_enabled: Boolean(config.image_settle_enabled !== false),
         image_check_before_hit_enabled: Boolean(config.image_check_before_hit_enabled !== false),
         image_settle_secs: Math.max(0.5, Number(config.image_settle_secs) || 2.0),
@@ -457,6 +522,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setImageAccountConcurrency: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_account_concurrency: value } } : {});
+  },
+
+  setImageTaskConcurrency: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_task_concurrency: value } } : {});
+  },
+
+  setImageTaskQueueTimeoutSecs: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_task_queue_timeout_secs: value } } : {});
   },
 
   setImageSettleEnabled: (value) => {
@@ -883,6 +956,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     if (!registerConfig) return;
     try {
       set({ isSavingRegister: true });
+      const issues = collectRegisterIssues(registerConfig);
+      if (issues.length > 0) {
+        throw new Error(issues[0]);
+      }
       const data = await updateRegisterConfig({
         mail: registerConfig.mail,
         proxy: registerConfig.proxy.trim(),
@@ -908,6 +985,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ isSavingRegister: true });
     try {
       if (!registerConfig.enabled) {
+        const issues = collectRegisterIssues(registerConfig);
+        if (issues.length > 0) {
+          throw new Error(issues[0]);
+        }
         await updateRegisterConfig({
           mail: registerConfig.mail,
           proxy: registerConfig.proxy.trim(),

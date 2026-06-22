@@ -1,6 +1,6 @@
 import unittest
 from unittest import mock
-from services.protocol.conversation import _generate_single_image, ImageOutput, ImageGenerationError
+from services.protocol.conversation import _generate_single_image, ImageOutput, ImageGenerationError, image_stream_error_message, public_image_error_message
 from services.openai_backend_api import ImagePollTimeoutError
 
 
@@ -88,6 +88,24 @@ class AccountFailoverTests(unittest.TestCase):
         
         # Verify proxy pool was NOT marked failed (since it's a prompt issue, not proxy issue)
         mock_proxy_pool.mark_proxy_failed.assert_not_called()
+
+    def test_image_error_messages_are_stable(self) -> None:
+        self.assertEqual(
+            public_image_error_message("backend-api/123 status=500 body=oops"),
+            "The image generation request failed. Please try again later.",
+        )
+        self.assertEqual(
+            image_stream_error_message("curl: (35) TLS connect error"),
+            "upstream image connection failed, please retry later",
+        )
+        self.assertEqual(
+            image_stream_error_message("curl: (28) Operation timed out"),
+            "upstream connection timed out, please retry later",
+        )
+        self.assertEqual(
+            image_stream_error_message("anything else"),
+            "anything else",
+        )
 
 
 if __name__ == "__main__":

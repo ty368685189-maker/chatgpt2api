@@ -26,6 +26,8 @@ export function ConfigCard() {
   const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
   const setImagePollTimeoutSecs = useSettingsStore((state) => state.setImagePollTimeoutSecs);
   const setImageAccountConcurrency = useSettingsStore((state) => state.setImageAccountConcurrency);
+  const setImageTaskConcurrency = useSettingsStore((state) => state.setImageTaskConcurrency);
+  const setImageTaskQueueTimeoutSecs = useSettingsStore((state) => state.setImageTaskQueueTimeoutSecs);
   const setImageSettleEnabled = useSettingsStore((state) => state.setImageSettleEnabled);
   const setImageSettleSecs = useSettingsStore((state) => state.setImageSettleSecs);
   const setImageTimeoutRetrySecs = useSettingsStore((state) => state.setImageTimeoutRetrySecs);
@@ -71,7 +73,7 @@ export function ConfigCard() {
 
   if (isLoadingConfig) {
     return (
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-sm">
         <CardContent className="flex items-center justify-center p-10">
           <LoaderCircle className="size-5 animate-spin text-stone-400" />
         </CardContent>
@@ -80,13 +82,13 @@ export function ConfigCard() {
   }
 
   return (
-    <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
-      <CardContent className="space-y-4 p-6">
-        <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
+    <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-sm">
+      <CardContent className="space-y-5 p-6 sm:p-7">
+        <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
           管理员登录密钥继续从部署配置读取，不再在此页面展示；如需分发给其他人，请在下方创建普通用户密钥。
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">账号刷新间隔</label>
             <Input
               value={String(config?.refresh_account_interval_minute || "")}
@@ -96,7 +98,7 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">单位分钟，控制账号自动刷新频率。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">全局代理</label>
             <Input
               value={String(config?.proxy || "")}
@@ -127,7 +129,7 @@ export function ConfigCard() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700"
+                className="h-9 rounded-full border-stone-200 bg-white px-4 text-stone-700"
                 onClick={() => void handleTestProxy()}
                 disabled={isTestingProxy}
               >
@@ -136,7 +138,7 @@ export function ConfigCard() {
               </Button>
             </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">图片访问地址</label>
             <Input
               value={String(config?.base_url || "")}
@@ -146,7 +148,7 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">用于生成图片结果的访问前缀地址。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">系统公告</label>
             <Textarea
               value={String(config?.system_announcement || "")}
@@ -156,7 +158,7 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">在此输入公益站的系统通知或公告信息，留空则不显示。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">图片自动清理</label>
             <Input
               value={String(config?.image_retention_days || "")}
@@ -166,7 +168,7 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">自动删除多少天前的本地图片。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">图片轮询超时</label>
             <Input
               value={String(config?.image_poll_timeout_secs || "")}
@@ -176,7 +178,7 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">单位秒，等待上游图片结果的最长时间。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">单账号图片并发</label>
             <Input
               value={String(config?.image_account_concurrency || "")}
@@ -185,6 +187,26 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">限制每个账号同时处理的图片请求数量，默认 3。</p>
+          </div>
+          <div className="space-y-2.5">
+            <label className="text-sm text-stone-700">全局图片任务并发</label>
+            <Input
+              value={String(config?.image_task_concurrency || "")}
+              onChange={(event) => setImageTaskConcurrency(event.target.value)}
+              placeholder="4"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">限制整台服务同时处理的图片任务数量，默认 4。人多时建议调小一点更稳。</p>
+          </div>
+          <div className="space-y-2.5">
+            <label className="text-sm text-stone-700">队列等待超时</label>
+            <Input
+              value={String(config?.image_task_queue_timeout_secs || "")}
+              onChange={(event) => setImageTaskQueueTimeoutSecs(event.target.value)}
+              placeholder="180"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">单位秒，任务排队太久就自动转失败，避免一直显示排队中。</p>
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
@@ -196,7 +218,7 @@ export function ConfigCard() {
             </label>
             <p className="text-xs text-stone-500">刷新时检测并移除</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
               <Checkbox
                 checked={Boolean(config?.image_settle_enabled !== false)}
@@ -206,7 +228,7 @@ export function ConfigCard() {
             </div>
             <p className="text-xs text-stone-500">打开后能稍微提升获取图片的成功率。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">图片超时继续等待时间</label>
             <Input
               value={String(config?.image_timeout_retry_secs || "30")}
@@ -216,7 +238,7 @@ export function ConfigCard() {
             />
             <p className="text-xs text-stone-500">单位秒，超时后点击"继续等待"额外等待的时间。</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm text-stone-700">图片二次确认等待时间</label>
             <Input
               value={String(config?.image_settle_secs || "2.0")}
@@ -228,7 +250,7 @@ export function ConfigCard() {
             <p className="text-xs text-stone-500">单位秒，找到图片后等待多久再次确认。需配合图片二次确认机制使用。</p>
           </div>
           <div className="flex gap-4 md:col-span-2">
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 space-y-2.5">
               <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
                 <Checkbox
                   checked={Boolean(config?.auto_relogin_after_refresh)}

@@ -657,7 +657,7 @@ class CloudMailGenProvider(BaseMailProvider):
 
     def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
         if not self.domain:
-            raise RuntimeError("CloudMailGen 需要至少配置一个 domain")
+            raise RuntimeError("CloudMailGen 需要至少配置一个可用 domain")
         address = self._resolve_address(username)
         return {"provider": self.name, "provider_ref": self.provider_ref, "address": address}
 

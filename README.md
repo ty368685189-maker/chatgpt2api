@@ -43,6 +43,19 @@ bash scripts/smoke_test.sh
 - API 地址：`http://localhost:3000/v1`
 - 数据目录：`./data`
 
+### 配置怎么优先
+
+对新手来说，记住这三条就够了：
+
+1. `CHATGPT2API_AUTH_KEY` 最高优先级，写了它就会覆盖 `config.json` 里的 `auth-key`。
+2. 后台设置页保存的是运行时配置，像代理、图片、备份、注册这些面板项，保存后会写入 `config.json` 或 `data/` 对应文件。
+3. `config.json` 是主配置文件，`data/` 里放的是账号、注册状态、日志和任务记录，升级时这两类数据都要一起保留。
+
+如果你只想先把服务跑起来，优先只改两处：
+
+- `config.json` 里的 `auth-key`
+- 如果需要代理，再改后台设置页里的全局代理或稳定代理运行时
+
 ### WARP / FlareSolverr 稳定代理部署
 
 如果注册或图片链路经常遇到 Cloudflare 拦截，可以启用附带的 WARP + Privoxy + FlareSolverr 方案：

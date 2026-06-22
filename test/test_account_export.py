@@ -2,6 +2,7 @@ import base64
 import json
 import unittest
 from typing import Any
+from unittest import mock
 
 from services.account_service import AccountService
 
@@ -112,6 +113,74 @@ class AccountExportTests(unittest.TestCase):
         self.assertEqual(account["export_type"], "codex")
         self.assertEqual(account["refresh_token"], "rt_test")
         self.assertEqual(account["account_id"], "acct_123")
+
+    def test_keepalive_refresh_tokens_logs_summary_and_returns_items(self) -> None:
+        service = AccountService(
+            MemoryStorage(
+                [
+                    {
+                        "access_token": "token-a",
+                        "refresh_token": "rt-a",
+                        "status": "正常",
+                        "last_token_refresh_error": None,
+                    },
+                    {
+                        "access_token": "token-b",
+                        "refresh_token": "rt-b",
+                        "status": "正常",
+                        "last_token_refresh_error": "recent keepalive error",
+                        "last_token_refresh_error_at": "2099-01-01T00:00:00+00:00",
+                    },
+                ]
+            )
+        )
+
+        with (
+            mock.patch.object(service, "refresh_access_token", side_effect=lambda token, force=False, event="refresh_access_token": token),
+            mock.patch("services.account_service.log_service") as log_mock,
+        ):
+            result = service.keepalive_refresh_tokens([" token-a ", "token-b", ""])
+
+        self.assertEqual(result["refreshed"], 1)
+        self.assertEqual(len(result["errors"]), 0)
+        self.assertEqual(len(result["skipped"]), 1)
+        self.assertEqual(result["items"], service.list_accounts())
+        self.assertEqual(result["relogined"], 0)
+        self.assertGreaterEqual(log_mock.add.call_count, 1)
+        self.assertEqual(log_mock.add.call_args_list[-1].args[1], "refresh_token keepalive 执行完成")
+
+    def test_keepalive_refresh_tokens_skips_recent_error_accounts(self) -> None:
+        service = AccountService(
+            MemoryStorage(
+                [
+                    {
+                        "access_token": "token-a",
+                        "refresh_token": "rt-a",
+                        "status": "正常",
+                        "last_token_refresh_error": "recent keepalive error",
+                        "last_token_refresh_error_at": "2099-01-01T00:00:00+00:00",
+                    },
+                    {
+                        "access_token": "token-b",
+                        "refresh_token": "rt-b",
+                        "status": "正常",
+                        "last_token_refresh_error": None,
+                    },
+                ]
+            )
+        )
+
+        with (
+            mock.patch.object(service, "refresh_access_token", side_effect=lambda token, force=False, event="refresh_access_token": token),
+            mock.patch("services.account_service.log_service") as log_mock,
+        ):
+            result = service.keepalive_refresh_tokens(["token-a", "token-b"])
+
+        self.assertEqual(result["refreshed"], 1)
+        self.assertEqual(len(result["skipped"]), 1)
+        self.assertTrue(result["skipped"][0]["token"].startswith("token:"))
+        self.assertEqual(result["skipped"][0]["reason"], "recent_keepalive_error")
+        self.assertEqual(log_mock.add.call_args_list[-1].args[1], "refresh_token keepalive 执行完成")
 
 
 if __name__ == "__main__":

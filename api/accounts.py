@@ -47,6 +47,14 @@ class AccountRefreshRequest(BaseModel):
     access_tokens: list[str] = Field(default_factory=list)
 
 
+class RefreshTokenKeepaliveRequest(BaseModel):
+    access_tokens: list[str] = Field(default_factory=list)
+
+
+class AccountResetCooldownRequest(BaseModel):
+    access_tokens: list[str] = Field(default_factory=list)
+
+
 class AccountExportRequest(BaseModel):
     access_tokens: list[str] = Field(default_factory=list)
     format: Literal["json", "zip"] = "json"
@@ -225,6 +233,22 @@ def create_router() -> APIRouter:
         if progress is None:
             raise HTTPException(status_code=404, detail={"error": "progress not found"})
         return progress
+
+    @router.post("/api/accounts/refresh-token")
+    async def refresh_token_keepalive(body: RefreshTokenKeepaliveRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        access_tokens = [str(token or "").strip() for token in body.access_tokens if str(token or "").strip()]
+        if not access_tokens:
+            raise HTTPException(status_code=400, detail={"error": "access_tokens is required"})
+        return account_service.keepalive_refresh_tokens(access_tokens)
+
+    @router.post("/api/accounts/reset-invalid-cooldown")
+    async def reset_invalid_cooldown(body: AccountResetCooldownRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        access_tokens = [str(token or "").strip() for token in body.access_tokens if str(token or "").strip()]
+        if not access_tokens:
+            raise HTTPException(status_code=400, detail={"error": "access_tokens is required"})
+        return account_service.reset_invalid_account_cooldown(access_tokens)
 
     @router.post("/api/accounts/re-login")
     async def re_login_accounts(body: AccountRefreshRequest, authorization: str | None = Header(default=None)):

@@ -1,11 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArrowDown, History, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
-import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
+import {
+  ImageResults,
+  type ImageLightboxItem,
+} from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
@@ -21,6 +31,7 @@ import webConfig from "@/constants/common-env";
 import {
   createImageEditTask,
   createImageGenerationTask,
+  cancelImageTask,
   fetchAccounts,
   fetchModels,
   fetchImageTasks,
@@ -50,7 +61,8 @@ import {
 } from "@/store/image-conversations";
 import { getStoredAuthSession } from "@/store/auth";
 
-const ACTIVE_CONVERSATION_STORAGE_KEY = "chatgpt2api:image_active_conversation_id";
+const ACTIVE_CONVERSATION_STORAGE_KEY =
+  "chatgpt2api:image_active_conversation_id";
 const IMAGE_RATIO_STORAGE_KEY = "chatgpt2api:image_last_ratio";
 const IMAGE_TIER_STORAGE_KEY = "chatgpt2api:image_last_tier";
 const IMAGE_QUALITY_STORAGE_KEY = "chatgpt2api:image_last_quality";
@@ -75,8 +87,13 @@ function saveScrollPositions(positions: Map<string, number>) {
   if (typeof window === "undefined") return;
   try {
     const obj: Record<string, number> = {};
-    positions.forEach((value, key) => { obj[key] = value; });
-    window.sessionStorage.setItem(SCROLL_POSITIONS_STORAGE_KEY, JSON.stringify(obj));
+    positions.forEach((value, key) => {
+      obj[key] = value;
+    });
+    window.sessionStorage.setItem(
+      SCROLL_POSITIONS_STORAGE_KEY,
+      JSON.stringify(obj),
+    );
   } catch {
     // sessionStorage may be full or unavailable
   }
@@ -87,7 +104,9 @@ function clampImageCount(value: string) {
 }
 function parseImageSize(size: string) {
   const match = size.match(/^(\d+)x(\d+)$/);
-  return match ? { width: match[1], height: match[2] } : { width: "1024", height: "1024" };
+  return match
+    ? { width: match[1], height: match[2] }
+    : { width: "1024", height: "1024" };
 }
 
 const activeConversationQueueIds = new Set<string>();
@@ -119,8 +138,15 @@ function formatConversationTime(value: string) {
 }
 
 function formatAvailableQuota(accounts: Account[]) {
-  const availableAccounts = accounts.filter((account) => account.status !== "禁用");
-  return String(availableAccounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
+  const availableAccounts = accounts.filter(
+    (account) => account.status !== "禁用",
+  );
+  return String(
+    availableAccounts.reduce(
+      (sum, account) => sum + Math.max(0, account.quota),
+      0,
+    ),
+  );
 }
 
 function createId() {
@@ -144,16 +170,24 @@ function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: string) {
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);
   }
-  return new File([bytes], fileName, { type: mimeType || matchedMimeType || "image/png" });
+  return new File([bytes], fileName, {
+    type: mimeType || matchedMimeType || "image/png",
+  });
 }
 
 function filterImageModels(items: Model[]): ImageModel[] {
   return items
     .map((item) => String(item.id || "").trim())
-    .filter((id, index, list) => id.toLowerCase().includes("image") && list.indexOf(id) === index);
+    .filter(
+      (id, index, list) =>
+        id.toLowerCase().includes("image") && list.indexOf(id) === index,
+    );
 }
 
-function normalizeStoredImageModel(value: string | null, availableModels: ImageModel[]): ImageModel {
+function normalizeStoredImageModel(
+  value: string | null,
+  availableModels: ImageModel[],
+): ImageModel {
   const normalized = String(value || "").trim();
   if (normalized && availableModels.includes(normalized)) {
     return normalized;
@@ -161,7 +195,10 @@ function normalizeStoredImageModel(value: string | null, availableModels: ImageM
   return availableModels[0] || "gpt-image-2";
 }
 
-function buildReferenceImageFromResult(image: StoredImage, fileName: string): StoredReferenceImage | null {
+function buildReferenceImageFromResult(
+  image: StoredImage,
+  fileName: string,
+): StoredReferenceImage | null {
   if (!image.b64_json) {
     return null;
   }
@@ -189,7 +226,10 @@ async function fetchImageAsFile(url: string, fileName: string) {
   return new File([blob], fileName, { type: blob.type || "image/png" });
 }
 
-async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: string) {
+async function buildReferenceImageFromStoredImage(
+  image: StoredImage,
+  fileName: string,
+) {
   const direct = buildReferenceImageFromResult(image, fileName);
   if (direct) {
     return {
@@ -212,7 +252,10 @@ async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: 
   };
 }
 
-function taskDataToStoredImage(image: StoredImage, task: ImageTask): StoredImage {
+function taskDataToStoredImage(
+  image: StoredImage,
+  task: ImageTask,
+): StoredImage {
   if (task.status === "success") {
     const first = task.data?.[0];
     if (!first?.b64_json && !first?.url) {
@@ -251,7 +294,12 @@ function taskDataToStoredImage(image: StoredImage, task: ImageTask): StoredImage
     };
   }
 
-  const newTaskStatus = task.status === "queued" ? "queued" : task.status === "running" ? "running" : image.taskStatus;
+  const newTaskStatus =
+    task.status === "queued"
+      ? "queued"
+      : task.status === "running"
+        ? "running"
+        : image.taskStatus;
   const shouldSetStartTime = newTaskStatus === "running" && !image.startTime;
   const startTime = shouldSetStartTime ? Date.now() : image.startTime;
   // elapsedSecs 仅使用后端返回的值，确保计时从 image_stream_resolve_start 开始
@@ -279,26 +327,43 @@ function sleep(ms: number) {
 
 function pickFallbackConversationId(conversations: ImageConversation[]) {
   const activeConversation = conversations.find((conversation) =>
-    conversation.turns.some((turn) => turn.status === "queued" || turn.status === "generating"),
+    conversation.turns.some(
+      (turn) => turn.status === "queued" || turn.status === "generating",
+    ),
   );
   return activeConversation?.id ?? conversations[0]?.id ?? null;
 }
 
 function sortImageConversations(conversations: ImageConversation[]) {
-  return [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return [...conversations].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
 
-function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> {
-  const loadingCount = turn.images.filter((image) => image.status === "loading").length;
-  const failedCount = turn.images.filter((image) => image.status === "error").length;
-  const successCount = turn.images.filter((image) => image.status === "success").length;
+function deriveTurnStatus(
+  turn: ImageTurn,
+): Pick<ImageTurn, "status" | "error"> {
+  const loadingCount = turn.images.filter(
+    (image) => image.status === "loading",
+  ).length;
+  const failedCount = turn.images.filter(
+    (image) => image.status === "error",
+  ).length;
+  const successCount = turn.images.filter(
+    (image) => image.status === "success",
+  ).length;
   if (loadingCount > 0) {
     // 如果任何图片的 taskStatus 为 running，则状态为 generating
-    const hasRunning = turn.images.some((image) => image.taskStatus === "running");
+    const hasRunning = turn.images.some(
+      (image) => image.taskStatus === "running",
+    );
     if (hasRunning) {
       return { status: "generating", error: undefined };
     }
-    return { status: turn.status === "queued" ? "queued" : "generating", error: undefined };
+    return {
+      status: turn.status === "queued" ? "queued" : "generating",
+      error: undefined,
+    };
   }
   if (failedCount > 0) {
     return { status: "error", error: `其中 ${failedCount} 张未成功生成` };
@@ -318,7 +383,8 @@ async function syncConversationImageTasks(items: ImageConversation[]) {
           turn.resultsDeleted
             ? []
             : turn.images.flatMap((image) =>
-                (image.status === "loading" || (image.status === "error" && image.taskId))
+                image.status === "loading" ||
+                (image.status === "error" && image.taskId)
                   ? [image.taskId!]
                   : [],
               ),
@@ -369,7 +435,10 @@ async function syncConversationImageTasks(items: ImageConversation[]) {
         images,
       };
     });
-    if (turns === conversation.turns || !turns.some((turn, index) => turn !== conversation.turns[index])) {
+    if (
+      turns === conversation.turns ||
+      !turns.some((turn, index) => turn !== conversation.turns[index])
+    ) {
       return conversation;
     }
     return {
@@ -389,7 +458,11 @@ async function recoverConversationHistory(items: ImageConversation[]) {
   let changed = false;
   const normalized = items.map((conversation) => {
     const turns = conversation.turns.map((turn) => {
-      if (turn.status !== "queued" && turn.status !== "generating" && turn.status !== "error") {
+      if (
+        turn.status !== "queued" &&
+        turn.status !== "generating" &&
+        turn.status !== "error"
+      ) {
         return turn;
       }
 
@@ -406,7 +479,11 @@ async function recoverConversationHistory(items: ImageConversation[]) {
         };
       });
       const derived = deriveTurnStatus({ ...turn, images });
-      if (!turnChanged && derived.status === turn.status && derived.error === turn.error) {
+      if (
+        !turnChanged &&
+        derived.status === turn.status &&
+        derived.error === turn.error
+      ) {
         return turn;
       }
       changed = true;
@@ -434,7 +511,6 @@ async function recoverConversationHistory(items: ImageConversation[]) {
 
   return syncConversationImageTasks(normalized);
 }
-
 
 function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const didLoadQuotaRef = useRef(false);
@@ -464,16 +540,23 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [imageModel, setImageModel] = useState<ImageModel>("gpt-image-2");
   const [imageModels, setImageModels] = useState<ImageModel[]>(["gpt-image-2"]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
-  const [referenceImages, setReferenceImages] = useState<StoredReferenceImage[]>([]);
+  const [referenceImages, setReferenceImages] = useState<
+    StoredReferenceImage[]
+  >([]);
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<
+    string | null
+  >(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [availableQuota, setAvailableQuota] = useState("加载中...");
   const [lightboxImages, setLightboxImages] = useState<ImageLightboxItem[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const scrollToLatestBtnRef = useRef<HTMLButtonElement>(null);
+  const composerShellRef = useRef<HTMLDivElement>(null);
+  const composerViewportBaselineRef = useRef<number>(0);
   const [deleteConfirm, setDeleteConfirm] = useState<
     | { type: "one"; id: string }
     | { type: "prompt"; conversationId: string; turnId: string }
@@ -486,10 +569,17 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     taskId: string;
     taskError: string;
   } | null>(null);
+  const [cancellingTaskIds, setCancellingTaskIds] = useState<Set<string>>(new Set());
+  const [composerHeight, setComposerHeight] = useState(0);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
-  const parsedCount = useMemo(() => Number(clampImageCount(imageCount)), [imageCount]);
+  const parsedCount = useMemo(
+    () => Number(clampImageCount(imageCount)),
+    [imageCount],
+  );
   const selectedConversation = useMemo(
-    () => conversations.find((item) => item.id === selectedConversationId) ?? null,
+    () =>
+      conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
   const activeTaskCount = useMemo(
@@ -526,6 +616,59 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   }, [conversations]);
 
   useEffect(() => {
+    const element = composerShellRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(element.getBoundingClientRect().height);
+      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) {
+      return;
+    }
+
+    const updateKeyboardOffset = () => {
+      const currentHeight = viewport.height;
+      if (currentHeight > composerViewportBaselineRef.current) {
+        composerViewportBaselineRef.current = currentHeight;
+      }
+      if (composerViewportBaselineRef.current === 0) {
+        composerViewportBaselineRef.current = currentHeight;
+      }
+
+      const nextOffset = Math.max(
+        0,
+        composerViewportBaselineRef.current - currentHeight - viewport.offsetTop,
+      );
+      setKeyboardOffset((current) =>
+        Math.abs(current - nextOffset) < 1 ? current : nextOffset,
+      );
+    };
+
+    updateKeyboardOffset();
+    viewport.addEventListener("resize", updateKeyboardOffset);
+    viewport.addEventListener("scroll", updateKeyboardOffset);
+    window.addEventListener("orientationchange", updateKeyboardOffset);
+
+    return () => {
+      viewport.removeEventListener("resize", updateKeyboardOffset);
+      viewport.removeEventListener("scroll", updateKeyboardOffset);
+      window.removeEventListener("orientationchange", updateKeyboardOffset);
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const qPrompt = params.get("prompt");
@@ -550,20 +693,23 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     }
   }, []);
 
-  const scrollResultsToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
-    const element = resultsViewportRef.current;
-    if (!element) {
-      return;
-    }
+  const scrollResultsToLatest = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const element = resultsViewportRef.current;
+      if (!element) {
+        return;
+      }
 
-    shouldStickToBottomRef.current = true;
-    const btn = scrollToLatestBtnRef.current;
-    if (btn) btn.style.display = "none";
-    element.scrollTo({
-      top: element.scrollHeight,
-      behavior,
-    });
-  }, []);
+      shouldStickToBottomRef.current = true;
+      const btn = scrollToLatestBtnRef.current;
+      if (btn) btn.style.display = "none";
+      element.scrollTo({
+        top: element.scrollHeight,
+        behavior,
+      });
+    },
+    [],
+  );
 
   const handleResultsScroll = useCallback(() => {
     if (scrollRafRef.current !== null) {
@@ -586,14 +732,16 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const convId = lastConversationIdRef.current;
       if (convId) {
         scrollPositionsRef.current.set(convId, element.scrollTop);
-        if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current);
+        if (scrollSaveTimerRef.current)
+          clearTimeout(scrollSaveTimerRef.current);
         scrollSaveTimerRef.current = setTimeout(() => {
           scrollSaveTimerRef.current = null;
           saveScrollPositions(scrollPositionsRef.current);
         }, 300);
       }
 
-      const isAwayFromLatest = getResultsDistanceFromBottom(element) > SCROLL_TO_LATEST_THRESHOLD;
+      const isAwayFromLatest =
+        getResultsDistanceFromBottom(element) > SCROLL_TO_LATEST_THRESHOLD;
       shouldStickToBottomRef.current = !isAwayFromLatest;
       // 直接操作 DOM 控制按钮显隐，避免 setState 触发全组件重渲染
       const btn = scrollToLatestBtnRef.current;
@@ -622,13 +770,21 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const loadHistory = useCallback(async () => {
     try {
       const storedRatio =
-        typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_RATIO_STORAGE_KEY) : null;
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(IMAGE_RATIO_STORAGE_KEY)
+          : null;
       const storedTier =
-        typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_TIER_STORAGE_KEY) : null;
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(IMAGE_TIER_STORAGE_KEY)
+          : null;
       const storedQuality =
-        typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_QUALITY_STORAGE_KEY) : null;
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(IMAGE_QUALITY_STORAGE_KEY)
+          : null;
       const storedCount =
-        typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_COUNT_STORAGE_KEY) : null;
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(IMAGE_COUNT_STORAGE_KEY)
+          : null;
       setImageRatio(storedRatio || "1:1");
       setImageTier(storedTier || "1k");
       setImageWidth("1024");
@@ -651,14 +807,20 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       conversationsRef.current = normalizedItems;
       setConversations(normalizedItems);
       const storedConversationId =
-        typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY) : null;
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY)
+          : null;
       const nextSelectedConversationId =
-        (storedConversationId && normalizedItems.some((conversation) => conversation.id === storedConversationId)
+        (storedConversationId &&
+        normalizedItems.some(
+          (conversation) => conversation.id === storedConversationId,
+        )
           ? storedConversationId
           : null) ?? pickFallbackConversationId(normalizedItems);
       setSelectedConversationId(nextSelectedConversationId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "读取会话记录失败";
+      const message =
+        error instanceof Error ? error.message : "读取会话记录失败";
       toast.error(message);
     } finally {
       if (!loadCancelledRef.current) {
@@ -714,12 +876,17 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     const loadImageModels = async () => {
       try {
         const data = await fetchModels();
-        const available = filterImageModels(Array.isArray(data.data) ? data.data : []);
+        const available = filterImageModels(
+          Array.isArray(data.data) ? data.data : [],
+        );
         if (cancelled || available.length === 0) {
           return;
         }
         setImageModels(available);
-        const storedModel = typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) : null;
+        const storedModel =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY)
+            : null;
         setImageModel((current) => {
           if (available.includes(current)) {
             return current;
@@ -784,7 +951,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       return;
     }
 
-    const didSwitchConversation = lastConversationIdRef.current !== selectedConversation.id;
+    const didSwitchConversation =
+      lastConversationIdRef.current !== selectedConversation.id;
 
     if (didSwitchConversation) {
       // 递增 generation，使之前未完成的 rAF 回调失效
@@ -800,7 +968,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       lastConversationIdRef.current = selectedConversation.id;
 
       // 如果有保存的滚动位置，隐藏容器防止用户看到 scrollTop=0 的内容
-      const savedScrollTop = scrollPositionsRef.current.get(selectedConversation.id);
+      const savedScrollTop = scrollPositionsRef.current.get(
+        selectedConversation.id,
+      );
       if (savedScrollTop != null && savedScrollTop > 0) {
         element.style.visibility = "hidden";
         isRestoringScrollRef.current = true;
@@ -819,7 +989,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       return;
     }
 
-    const savedScrollTop = scrollPositionsRef.current.get(selectedConversation.id);
+    const savedScrollTop = scrollPositionsRef.current.get(
+      selectedConversation.id,
+    );
 
     if (savedScrollTop != null && savedScrollTop > 0) {
       // 捕获当前 generation，用于检测是否已被新的切换取代
@@ -833,7 +1005,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         requestAnimationFrame(() => {
           // 再次检查 generation
           if (scrollRestoreGenerationRef.current !== generation) return;
-          const isAwayFromLatest = getResultsDistanceFromBottom(element) > SCROLL_TO_LATEST_THRESHOLD;
+          const isAwayFromLatest =
+            getResultsDistanceFromBottom(element) > SCROLL_TO_LATEST_THRESHOLD;
           shouldStickToBottomRef.current = !isAwayFromLatest;
           const btn = scrollToLatestBtnRef.current;
           if (btn) btn.style.display = isAwayFromLatest ? "" : "none";
@@ -859,7 +1032,12 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
     const btn = scrollToLatestBtnRef.current;
     if (btn) btn.style.display = "";
-  }, [selectedConversation?.id, selectedConversation?.updatedAt, selectedConversation?.turns.length, scrollResultsToLatest]);
+  }, [
+    selectedConversation?.id,
+    selectedConversation?.updatedAt,
+    selectedConversation?.turns.length,
+    scrollResultsToLatest,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -867,7 +1045,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     }
 
     if (selectedConversationId) {
-      window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, selectedConversationId);
+      window.localStorage.setItem(
+        ACTIVE_CONVERSATION_STORAGE_KEY,
+        selectedConversationId,
+      );
     } else {
       window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY);
     }
@@ -891,7 +1072,12 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   }, [parsedCount]);
 
   useEffect(() => {
-    if (selectedConversationId && !conversations.some((conversation) => conversation.id === selectedConversationId)) {
+    if (
+      selectedConversationId &&
+      !conversations.some(
+        (conversation) => conversation.id === selectedConversationId,
+      )
+    ) {
       setSelectedConversationId(pickFallbackConversationId(conversations));
     }
   }, [conversations, selectedConversationId]);
@@ -912,11 +1098,15 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       updater: (current: ImageConversation | null) => ImageConversation,
       options: { persist?: boolean } = {},
     ) => {
-      const current = conversationsRef.current.find((item) => item.id === conversationId) ?? null;
+      const current =
+        conversationsRef.current.find((item) => item.id === conversationId) ??
+        null;
       const nextConversation = updater(current);
       const nextConversations = sortImageConversations([
         nextConversation,
-        ...conversationsRef.current.filter((item) => item.id !== conversationId),
+        ...conversationsRef.current.filter(
+          (item) => item.id !== conversationId,
+        ),
       ]);
       conversationsRef.current = nextConversations;
       setConversations(nextConversations);
@@ -969,8 +1159,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
-  const handleDeleteTurnPart = async (conversationId: string, turnId: string, part: "prompt" | "results") => {
-    const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+  const handleDeleteTurnPart = async (
+    conversationId: string,
+    turnId: string,
+    part: "prompt" | "results",
+  ) => {
+    const conversation = conversationsRef.current.find(
+      (item) => item.id === conversationId,
+    );
     if (!conversation) {
       return;
     }
@@ -985,13 +1181,22 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           prompt: part === "prompt" ? "" : turn.prompt,
           promptDeleted: part === "prompt" ? true : turn.promptDeleted,
           resultsDeleted: part === "results" ? true : turn.resultsDeleted,
-          status: part === "results" && turn.status === "generating" ? "error" as const : turn.status,
+          status:
+            part === "results" && turn.status === "generating"
+              ? ("error" as const)
+              : turn.status,
           images:
             part === "results"
-              ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: "生成结果已删除" }))
+              ? turn.images.map((image) => ({
+                  id: image.id,
+                  status: "error" as const,
+                  error: "生成结果已删除",
+                }))
               : turn.images,
         };
-        return nextTurn.promptDeleted && nextTurn.resultsDeleted ? null : nextTurn;
+        return nextTurn.promptDeleted && nextTurn.resultsDeleted
+          ? null
+          : nextTurn;
       })
       .filter((turn): turn is ImageTurn => Boolean(turn));
 
@@ -1017,14 +1222,17 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       resetComposer();
       toast.success("已清空历史记录");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "清空历史记录失败";
+      const message =
+        error instanceof Error ? error.message : "清空历史记录失败";
       toast.error(message);
     }
   };
 
   const handleRenameConversation = async (id: string, title: string) => {
     const nextConversations = conversations.map((item) =>
-      item.id === id ? { ...item, title, updatedAt: new Date().toISOString() } : item,
+      item.id === id
+        ? { ...item, title, updatedAt: new Date().toISOString() }
+        : item,
     );
     conversationsRef.current = sortImageConversations(nextConversations);
     setConversations(conversationsRef.current);
@@ -1065,7 +1273,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       return;
     }
     if (target.type === "prompt" || target.type === "results") {
-      await handleDeleteTurnPart(target.conversationId, target.turnId, target.type);
+      await handleDeleteTurnPart(
+        target.conversationId,
+        target.turnId,
+        target.type,
+      );
       return;
     }
     await handleDeleteConversation(target.id);
@@ -1115,11 +1327,16 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       }
       return next;
     });
-    setReferenceImages((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+    setReferenceImages((prev) =>
+      prev.filter((_, currentIndex) => currentIndex !== index),
+    );
   }, []);
 
   const handleContinueEdit = useCallback(
-    async (conversationId: string, image: StoredImage | StoredReferenceImage) => {
+    async (
+      conversationId: string,
+      image: StoredImage | StoredReferenceImage,
+    ) => {
       try {
         const nextReference =
           "dataUrl" in image
@@ -1127,7 +1344,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                 referenceImage: image,
                 file: dataUrlToFile(image.dataUrl, image.name, image.type),
               }
-            : await buildReferenceImageFromStoredImage(image, `conversation-${conversationId}-${Date.now()}.png`);
+            : await buildReferenceImageFromStoredImage(
+                image,
+                `conversation-${conversationId}-${Date.now()}.png`,
+              );
         if (!nextReference) {
           return;
         }
@@ -1140,50 +1360,61 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         textareaRef.current?.focus();
         toast.success("已加入当前参考图，继续输入描述即可编辑");
       } catch (error) {
-        const message = error instanceof Error ? error.message : "读取结果图失败";
+        const message =
+          error instanceof Error ? error.message : "读取结果图失败";
         toast.error(message);
       }
     },
     [],
   );
 
-  const handleReuseTurnConfig = useCallback(async (conversationId: string, turnId: string) => {
-    const conversation = conversationsRef.current.find((item) => item.id === conversationId);
-    const turn = conversation?.turns.find((item) => item.id === turnId);
-    if (!conversation || !turn || !turn.prompt.trim()) {
-      return;
-    }
+  const handleReuseTurnConfig = useCallback(
+    async (conversationId: string, turnId: string) => {
+      const conversation = conversationsRef.current.find(
+        (item) => item.id === conversationId,
+      );
+      const turn = conversation?.turns.find((item) => item.id === turnId);
+      if (!conversation || !turn || !turn.prompt.trim()) {
+        return;
+      }
 
-    setSelectedConversationId(conversationId);
-    setImagePrompt(turn.prompt);
-    setImageCount(String(Math.max(1, turn.count || turn.images.length || 1)));
-    setImageRatio(turn.ratio);
-    setImageTier(turn.tier);
-    const parsedSize = parseImageSize(turn.size);
-    setImageWidth(parsedSize.width);
-    setImageHeight(parsedSize.height);
-    setImageQuality(turn.quality);
-    setImageModel(turn.model);
-    setReferenceImages(turn.referenceImages);
-    setReferenceImageFiles(
-      turn.referenceImages.map((image) => dataUrlToFile(image.dataUrl, image.name, image.type)),
-    );
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    textareaRef.current?.focus();
-    toast.success("已复用这条提示词配置");
-  }, []);
+      setSelectedConversationId(conversationId);
+      setImagePrompt(turn.prompt);
+      setImageCount(String(Math.max(1, turn.count || turn.images.length || 1)));
+      setImageRatio(turn.ratio);
+      setImageTier(turn.tier);
+      const parsedSize = parseImageSize(turn.size);
+      setImageWidth(parsedSize.width);
+      setImageHeight(parsedSize.height);
+      setImageQuality(turn.quality);
+      setImageModel(turn.model);
+      setReferenceImages(turn.referenceImages);
+      setReferenceImageFiles(
+        turn.referenceImages.map((image) =>
+          dataUrlToFile(image.dataUrl, image.name, image.type),
+        ),
+      );
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      textareaRef.current?.focus();
+      toast.success("已复用这条提示词配置");
+    },
+    [],
+  );
 
-  const openLightbox = useCallback((images: ImageLightboxItem[], index: number) => {
-    if (images.length === 0) {
-      return;
-    }
+  const openLightbox = useCallback(
+    (images: ImageLightboxItem[], index: number) => {
+      if (images.length === 0) {
+        return;
+      }
 
-    setLightboxImages(images);
-    setLightboxIndex(Math.max(0, Math.min(index, images.length - 1)));
-    setLightboxOpen(true);
-  }, []);
+      setLightboxImages(images);
+      setLightboxIndex(Math.max(0, Math.min(index, images.length - 1)));
+      setLightboxOpen(true);
+    },
+    [],
+  );
 
   const createLoadingImages = (turnId: string, count: number) =>
     Array.from({ length: count }, (_, index) => {
@@ -1195,6 +1426,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       };
     });
 
+  const isTaskCancelling = useCallback(
+    (taskId: string) => cancellingTaskIds.has(taskId),
+    [cancellingTaskIds],
+  );
+
   /* eslint-disable react-hooks/preserve-manual-memoization */
   const runConversationQueue = useCallback(
     async (conversationId: string) => {
@@ -1202,7 +1438,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         return;
       }
 
-      const snapshot = conversationsRef.current.find((conversation) => conversation.id === conversationId);
+      const snapshot = conversationsRef.current.find(
+        (conversation) => conversation.id === conversationId,
+      );
       const activeTurn = snapshot?.turns.find(
         (turn) =>
           (turn.status === "queued" || turn.status === "generating") &&
@@ -1224,7 +1462,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             const images = turn.images.map((image) => {
               const taskId = image.taskId || image.id;
               const task = taskMap.get(taskId);
-              return task ? taskDataToStoredImage({ ...image, taskId }, task) : image;
+              return task
+                ? taskDataToStoredImage({ ...image, taskId }, task)
+                : image;
             });
             const derived = deriveTurnStatus({ ...turn, images });
             return {
@@ -1242,21 +1482,39 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       };
 
       try {
-
         const referenceFiles = activeTurn.referenceImages.map((image, index) =>
-          dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type),
+          dataUrlToFile(
+            image.dataUrl,
+            image.name || `${activeTurn.id}-${index + 1}.png`,
+            image.type,
+          ),
         );
         if (activeTurn.mode === "edit" && referenceFiles.length === 0) {
           throw new Error("未找到可用于继续编辑的参考图");
         }
 
-        const pendingImages = activeTurn.images.filter((image) => image.status === "loading");
+        const pendingImages = activeTurn.images.filter(
+          (image) => image.status === "loading",
+        );
         const submitted = await Promise.all(
           pendingImages.map((image) => {
             const taskId = image.taskId || image.id;
             return activeTurn.mode === "edit"
-              ? createImageEditTask(taskId, referenceFiles, activeTurn.prompt, activeTurn.model, activeTurn.size, activeTurn.quality)
-              : createImageGenerationTask(taskId, activeTurn.prompt, activeTurn.model, activeTurn.size, activeTurn.quality);
+              ? createImageEditTask(
+                  taskId,
+                  referenceFiles,
+                  activeTurn.prompt,
+                  activeTurn.model,
+                  activeTurn.size,
+                  activeTurn.quality,
+                )
+              : createImageGenerationTask(
+                  taskId,
+                  activeTurn.prompt,
+                  activeTurn.model,
+                  activeTurn.size,
+                  activeTurn.quality,
+                );
           }),
         );
         await applyTasks(submitted);
@@ -1264,8 +1522,12 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         let consecutiveErrors = 0;
         const retryingTaskIdsRef = new Set<string>();
         while (true) {
-          const latestConversation = conversationsRef.current.find((conversation) => conversation.id === conversationId);
-          const latestTurn = latestConversation?.turns.find((turn) => turn.id === activeTurn.id);
+          const latestConversation = conversationsRef.current.find(
+            (conversation) => conversation.id === conversationId,
+          );
+          const latestTurn = latestConversation?.turns.find(
+            (turn) => turn.id === activeTurn.id,
+          );
           const loadingTaskIds =
             latestTurn?.images.flatMap((image) =>
               image.status === "loading" && image.taskId ? [image.taskId] : [],
@@ -1290,7 +1552,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               if (timeoutTask && timeoutTask.conversation_id) {
                 retryingTaskIdsRef.add(timeoutTask.id);
                 setTimeoutRetry({
-                  conversationId: timeoutTask.conversation_id,
+                  conversationId,
                   taskId: timeoutTask.id,
                   taskError: timeoutTask.error || "生图超时",
                 });
@@ -1302,13 +1564,29 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             }
             if (taskList.missing_ids.length > 0 && latestTurn) {
               const missingImages = latestTurn.images.filter(
-                (image) => image.status === "loading" && image.taskId && taskList.missing_ids.includes(image.taskId),
+                (image) =>
+                  image.status === "loading" &&
+                  image.taskId &&
+                  taskList.missing_ids.includes(image.taskId),
               );
               const resubmitted = await Promise.all(
                 missingImages.map((image) =>
                   activeTurn.mode === "edit"
-                    ? createImageEditTask(image.taskId || image.id, referenceFiles, activeTurn.prompt, activeTurn.model, activeTurn.size, activeTurn.quality)
-                    : createImageGenerationTask(image.taskId || image.id, activeTurn.prompt, activeTurn.model, activeTurn.size, activeTurn.quality),
+                    ? createImageEditTask(
+                        image.taskId || image.id,
+                        referenceFiles,
+                        activeTurn.prompt,
+                        activeTurn.model,
+                        activeTurn.size,
+                        activeTurn.quality,
+                      )
+                    : createImageGenerationTask(
+                        image.taskId || image.id,
+                        activeTurn.prompt,
+                        activeTurn.model,
+                        activeTurn.size,
+                        activeTurn.quality,
+                      ),
                 ),
               );
               if (resubmitted.length > 0) {
@@ -1338,7 +1616,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                     status: "error",
                     error: message,
                     images: turn.images.map((image) =>
-                      image.status === "loading" ? { ...image, status: "error", error: message } : image,
+                      image.status === "loading"
+                        ? { ...image, status: "error", error: message }
+                        : image,
                     ),
                   }
                 : turn,
@@ -1368,7 +1648,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
   const handleRegenerateTurn = useCallback(
     async (conversationId: string, turnId: string) => {
-      const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+      const conversation = conversationsRef.current.find(
+        (item) => item.id === conversationId,
+      );
       const sourceTurn = conversation?.turns.find((turn) => turn.id === turnId);
       if (!conversation || !sourceTurn || !sourceTurn.prompt.trim()) {
         return;
@@ -1376,7 +1658,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
       const now = new Date().toISOString();
       const nextTurnId = createId();
-      const count = Math.max(1, sourceTurn.count || sourceTurn.images.length || 1);
+      const count = Math.max(
+        1,
+        sourceTurn.count || sourceTurn.images.length || 1,
+      );
       const nextTurn: ImageTurn = {
         id: nextTurnId,
         prompt: sourceTurn.prompt,
@@ -1408,7 +1693,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
   const handleRetryImage = useCallback(
     async (conversationId: string, turnId: string, imageId: string) => {
-      const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+      const conversation = conversationsRef.current.find(
+        (item) => item.id === conversationId,
+      );
       if (!conversation) {
         return;
       }
@@ -1435,7 +1722,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                 }
               : image,
           );
-          const derived = deriveTurnStatus({ ...turn, status: "queued", images });
+          const derived = deriveTurnStatus({
+            ...turn,
+            status: "queued",
+            images,
+          });
           return {
             ...turn,
             ...derived,
@@ -1451,6 +1742,13 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     [runConversationQueue],
   );
 
+  const handleCancelImage = useCallback(
+    async (conversationId: string, taskId: string) => {
+      await handleCancelTask(conversationId, taskId);
+    },
+    [handleCancelTask],
+  );
+
   const handleTimeoutRetryContinue = useCallback(async () => {
     if (!timeoutRetry) return;
     const { conversationId, taskId } = timeoutRetry;
@@ -1458,13 +1756,17 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       await resumeImagePoll(taskId, imageTimeoutRetrySecs);
       // 将对应图片的状态重置为 loading，并清除错误
       void updateConversation(conversationId, (current) => {
-        const conversation = current ?? conversationsRef.current.find((c) => c.id === conversationId);
+        const conversation =
+          current ??
+          conversationsRef.current.find((c) => c.id === conversationId);
         if (!conversation) return current!;
         return {
           ...conversation,
           updatedAt: new Date().toISOString(),
           turns: conversation.turns.map((turn) => {
-            const hasLoading = turn.images.some((image) => image.taskId === taskId);
+            const hasLoading = turn.images.some(
+              (image) => image.taskId === taskId,
+            );
             if (!hasLoading) return turn;
             return {
               ...turn,
@@ -1472,8 +1774,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               error: undefined,
               images: turn.images.map((image) =>
                 image.taskId === taskId
-                  ? { ...image, status: "loading" as const, error: undefined, taskStatus: "running" as const, startTime: image.startTime || Date.now() }
-                  : image
+                  ? {
+                      ...image,
+                      status: "loading" as const,
+                      error: undefined,
+                      taskStatus: "running" as const,
+                      startTime: image.startTime || Date.now(),
+                    }
+                  : image,
               ),
             };
           }),
@@ -1481,33 +1789,39 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       });
       // 清除重试状态
       setTimeoutRetry(null);
+      void runConversationQueue(conversationId);
       toast.info(`已继续等待 ${imageTimeoutRetrySecs} 秒`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "续轮询失败";
       toast.error(msg);
       setTimeoutRetry(null);
     }
-  }, [timeoutRetry, updateConversation, imageTimeoutRetrySecs]);
+  }, [timeoutRetry, updateConversation, imageTimeoutRetrySecs, runConversationQueue]);
 
   const handleTimeoutRetryCancel = useCallback(() => {
     if (!timeoutRetry) return;
     const { conversationId: convId, taskId, taskError } = timeoutRetry;
     // 将超时错误应用到对应图片
     void updateConversation(convId, (current) => {
-      const conversation = current ?? conversationsRef.current.find((c) => c.id === convId);
+      const conversation =
+        current ?? conversationsRef.current.find((c) => c.id === convId);
       if (!conversation) return current!;
       return {
         ...conversation,
         updatedAt: new Date().toISOString(),
         turns: conversation.turns.map((turn) => {
-          const hasLoading = turn.images.some((image) => image.status === "loading" && image.taskId === taskId);
+          const hasLoading = turn.images.some(
+            (image) => image.status === "loading" && image.taskId === taskId,
+          );
           if (!hasLoading) return turn;
           return {
             ...turn,
             status: "error" as const,
             error: taskError,
             images: turn.images.map((image) =>
-              image.taskId === taskId ? { ...image, status: "error" as const, error: taskError } : image,
+              image.taskId === taskId
+                ? { ...image, status: "error" as const, error: taskError }
+                : image,
             ),
           };
         }),
@@ -1517,18 +1831,80 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     toast.error(taskError);
   }, [timeoutRetry, updateConversation]);
 
+  const handleCancelTask = useCallback(
+    async (conversationId: string, taskId: string) => {
+      if (!taskId || cancellingTaskIds.has(taskId)) {
+        return;
+      }
+      setCancellingTaskIds((current) => new Set(current).add(taskId));
+      try {
+        const cancelled = await cancelImageTask(taskId);
+        await updateConversation(conversationId, (current) => {
+          const conversation =
+            current ??
+            conversationsRef.current.find((c) => c.id === conversationId);
+          if (!conversation) return current!;
+          return {
+            ...conversation,
+            updatedAt: new Date().toISOString(),
+            turns: conversation.turns.map((turn) => {
+              const hasTask = turn.images.some((image) => image.taskId === taskId);
+              if (!hasTask) return turn;
+              const images = turn.images.map((image) =>
+                image.taskId === taskId
+                  ? {
+                      ...image,
+                      status: "cancelled" as const,
+                      error: cancelled.error || "任务已取消",
+                      taskStatus: undefined,
+                    }
+                  : image,
+              );
+              const derived = deriveTurnStatus({ ...turn, images });
+              return {
+                ...turn,
+                ...derived,
+                images,
+                status: "error" as const,
+                error: "任务已取消",
+              };
+            }),
+          };
+        });
+        toast.info("已停止生图");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "停止失败";
+        toast.error(message);
+      } finally {
+        setCancellingTaskIds((current) => {
+          const next = new Set(current);
+          next.delete(taskId);
+          return next;
+        });
+      }
+    },
+    [cancellingTaskIds, updateConversation],
+  );
+
   const handleDismissErrors = useCallback(
     async (conversationId: string, turnId: string) => {
       await updateConversation(conversationId, (current) => {
-        const conversation = current ?? conversationsRef.current.find((c) => c.id === conversationId);
+        const conversation =
+          current ??
+          conversationsRef.current.find((c) => c.id === conversationId);
         if (!conversation) return current!;
         return {
           ...conversation,
           updatedAt: new Date().toISOString(),
           turns: conversation.turns.map((turn) => {
             if (turn.id !== turnId) return turn;
-            const successImages = turn.images.filter((image) => image.status !== "error");
-            const derived = deriveTurnStatus({ ...turn, images: successImages });
+            const successImages = turn.images.filter(
+              (image) => image.status !== "error",
+            );
+            const derived = deriveTurnStatus({
+              ...turn,
+              images: successImages,
+            });
             return {
               ...turn,
               ...derived,
@@ -1559,73 +1935,88 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   }, [conversations, runConversationQueue]);
 
   const handleSubmit = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     const prompt = imagePrompt.trim();
     if (!prompt) {
       toast.error("请输入提示词");
       return;
     }
 
-    const effectiveImageMode: ImageConversationMode = referenceImageFiles.length > 0 ? "edit" : "generate";
+    setIsSubmitting(true);
+    try {
+      const effectiveImageMode: ImageConversationMode =
+        referenceImageFiles.length > 0 ? "edit" : "generate";
 
-    const targetConversation = selectedConversationId
-      ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
-      : null;
-    const now = new Date().toISOString();
-    const conversationId = targetConversation?.id ?? createId();
-    const turnId = createId();
-    const imageSize = imageRatio === "auto" ? "" : `${imageWidth || 1024}x${imageHeight || 1024}`;
-    const draftTurn: ImageTurn = {
-      id: turnId,
-      prompt,
-      model: imageModel,
-      mode: effectiveImageMode,
-      referenceImages: effectiveImageMode === "edit" ? referenceImages : [],
-      count: parsedCount,
-      size: imageSize,
-      ratio: imageRatio,
-      tier: imageTier,
-      quality: imageQuality,
-      images: createLoadingImages(turnId, parsedCount),
-      createdAt: now,
-      status: "queued",
-    };
-
-    const baseConversation: ImageConversation = targetConversation
-      ? {
-          ...targetConversation,
-          updatedAt: now,
-          turns: [...targetConversation.turns, draftTurn],
-        }
-      : {
-          id: conversationId,
-          title: buildConversationTitle(prompt),
-          createdAt: now,
-          updatedAt: now,
-          turns: [draftTurn],
+      const targetConversation = selectedConversationId
+        ? (conversationsRef.current.find(
+            (conversation) => conversation.id === selectedConversationId,
+          ) ?? null)
+        : null;
+      const now = new Date().toISOString();
+      const conversationId = targetConversation?.id ?? createId();
+      const turnId = createId();
+      const imageSize =
+        imageRatio === "auto"
+          ? ""
+          : `${imageWidth || 1024}x${imageHeight || 1024}`;
+      const draftTurn: ImageTurn = {
+        id: turnId,
+        prompt,
+        model: imageModel,
+        mode: effectiveImageMode,
+        referenceImages: effectiveImageMode === "edit" ? referenceImages : [],
+        count: parsedCount,
+        size: imageSize,
+        ratio: imageRatio,
+        tier: imageTier,
+        quality: imageQuality,
+        images: createLoadingImages(turnId, parsedCount),
+        createdAt: now,
+        status: "queued",
       };
 
-    shouldStickToBottomRef.current = true;
-    const btn = scrollToLatestBtnRef.current;
-    if (btn) btn.style.display = "none";
-    setSelectedConversationId(conversationId);
-    clearComposerInputs();
+      const baseConversation: ImageConversation = targetConversation
+        ? {
+            ...targetConversation,
+            updatedAt: now,
+            turns: [...targetConversation.turns, draftTurn],
+          }
+        : {
+            id: conversationId,
+            title: buildConversationTitle(prompt),
+            createdAt: now,
+            updatedAt: now,
+            turns: [draftTurn],
+          };
 
-    await persistConversation(baseConversation);
-    void runConversationQueue(conversationId);
+      shouldStickToBottomRef.current = true;
+      const btn = scrollToLatestBtnRef.current;
+      if (btn) btn.style.display = "none";
+      setSelectedConversationId(conversationId);
+      clearComposerInputs();
 
-    const targetStats = getImageConversationStats(baseConversation);
-    if (targetStats.running > 0 || targetStats.queued > 1) {
-      toast.success("已加入当前对话队列");
-    } else if (!targetConversation) {
-      toast.success("已创建新对话并开始处理");
-    } else {
-      toast.success("已发送到当前对话");
+      await persistConversation(baseConversation);
+      void runConversationQueue(conversationId);
+
+      const targetStats = getImageConversationStats(baseConversation);
+      if (targetStats.running > 0 || targetStats.queued > 1) {
+        toast.success("已加入当前对话队列");
+      } else if (!targetConversation) {
+        toast.success("已创建新对话并开始处理");
+      } else {
+        toast.success("已发送到当前对话");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <>
-      <section className="mx-auto grid h-[calc(100dvh-6.5rem)] min-h-0 w-full max-w-[1380px] grid-cols-1 gap-2 overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:h-[calc(100dvh-5.25rem)] sm:gap-3 sm:px-3 sm:pb-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <section className="mx-auto grid h-[calc(100svh-6.5rem)] min-h-0 w-full max-w-[1400px] grid-cols-1 gap-2 overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:h-[calc(100dvh-5.25rem)] sm:gap-3 sm:px-3 sm:pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
         <div className="hidden h-full min-h-0 border-r border-stone-200/60 pr-3 lg:block">
           <ImageSidebar
             conversations={conversations}
@@ -1641,14 +2032,15 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         </div>
 
         <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-          <DialogContent className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden rounded-[32px] border-white/80 bg-white p-0 shadow-[0_32px_110px_-38px_rgba(15,23,42,0.45)] sm:rounded-[36px]">
-            <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
-              <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
-                <History className="size-5" />
+          <DialogContent className="flex h-[84dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-t-[22px] border-0 border-t border-stone-200/55 bg-white p-0 shadow-[0_-10px_30px_-28px_rgba(15,23,42,0.22)] !bottom-0 !left-0 !right-0 !top-auto !translate-x-0 !translate-y-0 sm:!bottom-auto sm:!left-[50%] sm:!right-auto sm:!top-[50%] sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:h-[min(82dvh,760px)] sm:w-[92vw] sm:max-w-[460px] sm:rounded-[32px] sm:border-white/80 sm:shadow-[0_24px_80px_-42px_rgba(15,23,42,0.38)]">
+            <div className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-stone-200 sm:hidden" />
+            <DialogHeader className="sticky top-0 z-10 border-b border-stone-100 bg-white/96 px-3 pt-2 pb-1.5 backdrop-blur-sm sm:static sm:border-0 sm:bg-transparent sm:px-8 sm:pt-7 sm:pb-4 sm:backdrop-blur-0">
+              <DialogTitle className="flex items-center gap-2 text-sm font-semibold tracking-tight sm:text-xl">
+                <History className="size-4" />
                 历史记录
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 sm:px-8">
+            <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:px-8 sm:pb-8">
               <ImageSidebar
                 conversations={conversations}
                 isLoadingHistory={isLoadingHistory}
@@ -1672,28 +2064,41 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         </Dialog>
 
         <div className="flex min-h-0 flex-col gap-2 sm:gap-3">
-          <div className="hidden overflow-hidden rounded-[20px] border border-white/70 bg-white/70 px-4 py-3 shadow-[0_14px_40px_-30px_rgba(25,33,61,0.2)] backdrop-blur-sm sm:block sm:px-5 sm:py-4">
+          <div className="flex items-center justify-between rounded-[12px] border border-white/50 bg-white/78 px-3 py-1.5 shadow-[0_6px_14px_-18px_rgba(25,33,61,0.12)] backdrop-blur-sm sm:hidden">
+            <div className="min-w-0">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-stone-500">
+                Dual公益站
+              </div>
+              <div className="truncate text-[13px] font-semibold tracking-tight text-stone-950">
+                画图
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="h-7 shrink-0 rounded-full border-stone-200 bg-white px-2.5 text-[11px] text-stone-700 shadow-none"
+              onClick={() => setIsHistoryOpen(true)}
+            >
+              <History className="size-3" />
+              历史
+            </Button>
+          </div>
+
+          <div className="hidden overflow-hidden rounded-[18px] border border-white/60 bg-white/78 px-4 py-3 shadow-[0_10px_26px_-28px_rgba(25,33,61,0.14)] backdrop-blur-sm sm:block sm:px-5 sm:py-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1">
                 <div className="inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] text-stone-500 uppercase dark:bg-white/8 dark:text-stone-300">
                   Dual公益站
                 </div>
-                <div className="space-y-0.5">
-                  <h1 className="text-lg font-semibold tracking-tight sm:text-xl">画图</h1>
-                  <p className="max-w-3xl text-xs leading-5 text-stone-500 sm:text-[13px] sm:leading-5">
-                    这里把提示词、参考图、尺寸和生成历史放在一起。你可以直接继续编辑上一轮结果，也可以从头新开一轮。
-                  </p>
-                </div>
+              <div className="space-y-0.5">
+                <h1 className="text-base font-semibold tracking-tight sm:text-xl">
+                  画图
+                </h1>
+                <p className="max-w-3xl text-[11px] leading-4 text-stone-500 sm:text-[13px] sm:leading-5">
+                  这里把提示词、参考图、尺寸和生成历史放在一起。你可以直接继续编辑上一轮结果，也可以从头新开一轮。
+                </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  className="h-8 rounded-full border-stone-200 bg-white/90 px-3 text-stone-700 shadow-sm"
-                  onClick={() => setIsHistoryOpen(true)}
-                >
-                  <History className="mr-1.5 size-3.5" />
-                  历史记录 ({conversations.length})
-                </Button>
+            </div>
+              <div className="hidden flex-wrap items-center gap-2 sm:flex">
                 <Button
                   className="h-8 rounded-full bg-stone-950 px-3.5 text-white shadow-sm"
                   onClick={handleCreateDraft}
@@ -1713,22 +2118,16 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 rounded-2xl border border-stone-200/70 bg-white/75 px-4 py-2 shadow-sm lg:hidden">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-stone-950 dark:text-white">额度</div>
-              <div className="text-xs text-stone-500 dark:text-stone-400">单独查看</div>
-            </div>
-            <Button asChild variant="outline" className="rounded-xl border-stone-200 bg-white/90 px-3 py-1.5">
-              <a href="/quota">查看</a>
-            </Button>
-          </div>
-
           <div className="relative min-h-0 flex-1">
             <div
               ref={resultsViewportRef}
               onScroll={handleResultsScroll}
-              className="hide-scrollbar h-full overscroll-contain overflow-y-auto px-1 py-1 sm:px-4 sm:py-2"
-              style={{ contain: "layout style paint" }}
+              className="hide-scrollbar h-full overscroll-contain overflow-y-auto px-0.5 py-0.5 max-sm:pb-4 sm:px-4 sm:py-2"
+              style={{
+                contain: "layout style paint",
+                paddingBottom:
+                  composerHeight > 0 ? `${composerHeight + 32}px` : undefined,
+              }}
             >
               <ImageResults
                 selectedConversation={selectedConversation}
@@ -1739,6 +2138,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                 onReuseTurnConfig={handleReuseTurnConfig}
                 onRegenerateTurn={handleRegenerateTurn}
                 onRetryImage={handleRetryImage}
+                onCancelImage={handleCancelImage}
+                isCancellingTask={isTaskCancelling}
                 onTimeoutRetryContinue={handleTimeoutRetryContinue}
                 onDismissErrors={handleDismissErrors}
                 formatConversationTime={formatConversationTime}
@@ -1751,41 +2152,57 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               aria-label="滚动到最新消息"
               title="滚动到最新消息"
               onClick={() => scrollResultsToLatest("smooth")}
-              className="absolute bottom-4 left-1/2 z-20 inline-flex size-10 -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-200/60 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 dark:border-white/10 dark:bg-stone-800/95 dark:text-stone-100 dark:shadow-black/40 dark:hover:bg-stone-700"
+              className="absolute bottom-2.5 left-1/2 z-20 inline-flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-200/60 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 dark:border-white/10 dark:bg-stone-800/95 dark:text-stone-100 dark:shadow-black/40 dark:hover:bg-stone-700"
               style={{ display: "none" }}
             >
-              <ArrowDown className="size-4.5" />
+              <ArrowDown className="size-4" />
             </button>
           </div>
 
-          <ImageComposer
-            prompt={imagePrompt}
-            imageCount={imageCount}
-            imageRatio={imageRatio}
-            imageTier={imageTier}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            imageQuality={imageQuality}
-            imageModel={imageModel}
-            imageModels={imageModels}
-            availableQuota={availableQuota}
-            activeTaskCount={activeTaskCount}
-            referenceImages={referenceImages}
-            textareaRef={textareaRef}
-            fileInputRef={fileInputRef}
-            onPromptChange={setImagePrompt}
-            onImageCountChange={(value) => setImageCount(value ? clampImageCount(value) : "")}
-            onImageRatioChange={setImageRatio}
-            onImageTierChange={setImageTier}
-            onImageWidthChange={setImageWidth}
-            onImageHeightChange={setImageHeight}
-            onImageQualityChange={setImageQuality}
-            onImageModelChange={setImageModel}
-            onSubmit={handleSubmit}
-            onPickReferenceImage={() => fileInputRef.current?.click()}
-            onReferenceImageChange={handleReferenceImageChange}
-            onRemoveReferenceImage={handleRemoveReferenceImage}
-          />
+          <div
+            ref={composerShellRef}
+            className="shrink-0 flex justify-center px-0 max-sm:fixed max-sm:inset-x-2 max-sm:z-30 sm:static sm:px-0"
+            style={{
+              bottom:
+                keyboardOffset > 0
+                  ? `calc(env(safe-area-inset-bottom) + ${keyboardOffset}px + 0.5rem)`
+                  : "calc(env(safe-area-inset-bottom) + 0.5rem)",
+            }}
+          >
+            <div className="w-full max-w-[940px]">
+              <ImageComposer
+                prompt={imagePrompt}
+                imageCount={imageCount}
+                imageRatio={imageRatio}
+                imageTier={imageTier}
+                imageWidth={imageWidth}
+                imageHeight={imageHeight}
+                imageQuality={imageQuality}
+                imageModel={imageModel}
+                imageModels={imageModels}
+                availableQuota={availableQuota}
+                activeTaskCount={activeTaskCount}
+                referenceImages={referenceImages}
+                isSubmitting={isSubmitting}
+                textareaRef={textareaRef}
+                fileInputRef={fileInputRef}
+                onPromptChange={setImagePrompt}
+                onImageCountChange={(value) =>
+                  setImageCount(value ? clampImageCount(value) : "")
+                }
+                onImageRatioChange={setImageRatio}
+                onImageTierChange={setImageTier}
+                onImageWidthChange={setImageWidth}
+                onImageHeightChange={setImageHeight}
+                onImageQualityChange={setImageQuality}
+                onImageModelChange={setImageModel}
+                onSubmit={handleSubmit}
+                onPickReferenceImage={() => fileInputRef.current?.click()}
+                onReferenceImageChange={handleReferenceImageChange}
+                onRemoveReferenceImage={handleRemoveReferenceImage}
+              />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1798,27 +2215,38 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       />
 
       {deleteConfirm ? (
-        <Dialog open onOpenChange={(open) => (!open ? setDeleteConfirm(null) : null)}>
-          <DialogContent showCloseButton={false} className="rounded-2xl p-6">
-            <DialogHeader className="gap-2">
+        <Dialog
+          open
+          onOpenChange={(open) => (!open ? setDeleteConfirm(null) : null)}
+        >
+          <DialogContent
+            showCloseButton={false}
+            className="w-[92vw] max-w-[420px] rounded-[20px] border-stone-200/70 p-4 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.3)] sm:rounded-2xl sm:p-6"
+          >
+            <DialogHeader className="gap-1.5 sm:gap-2">
               <DialogTitle>{deleteConfirmTitle}</DialogTitle>
-              <DialogDescription className="text-sm leading-6">
+              <DialogDescription className="text-[13px] leading-6 sm:text-sm">
                 {deleteConfirmDescription}
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                className="h-9 rounded-full px-4"
+                onClick={() => setDeleteConfirm(null)}
+              >
                 取消
               </Button>
-              <Button className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleConfirmDelete()}>
+              <Button
+                className="h-9 rounded-full bg-rose-600 px-4 text-white hover:bg-rose-700"
+                onClick={() => void handleConfirmDelete()}
+              >
                 确认删除
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       ) : null}
-
-
     </>
   );
 }

@@ -34,6 +34,6 @@
 | 文本补全缓存与重复请求合并 | ✅  | `/v1/chat/completions` 文本链路默认启用 60 秒短缓存、流式结果回放、in-flight 请求合并和相邻重复消息清理；可通过 `chat_completion_cache` 配置关闭或调整。 |
 | 图片尺寸参数 | ❌  | 待实现。 |
 | 服务端图片 URL 缓存 | ✅  | 已实现。 |
-| `rt_token` 刷新 | ❌  | 待实现。 |
+| `rt_token` 刷新 | ✅  | 已支持，可手动触发 refresh token keepalive / refresh。 |
 | 代理配置功能 | ✅  | 已支持网页端配置全局 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理，并应用到出站请求。 |
 | Anthropic 协议支持 | ❌  | 待实现。 |

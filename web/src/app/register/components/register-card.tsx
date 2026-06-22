@@ -81,7 +81,7 @@ export function RegisterCard() {
 
           <div className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>如果注册日志出现 Cloudflare 拦截，可在设置页启用 FlareSolverr 清障；相关 Docker 容器需要先启动。</span>
+            <span>如果注册日志出现 Cloudflare 拦截，可在设置页启用 FlareSolverr 清障；CloudMail 提供商也需要先填好至少一个可用域名，否则保存和启动都会被拦住。</span>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
@@ -332,7 +332,16 @@ export function RegisterCard() {
                     {type === "cloudmail_gen" || type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "ddg_mail" ? (
                       <div className="space-y-2">
                         <label className="text-sm text-stone-700">{type === "cloudmail_gen" ? "邮箱域名" : type === "inbucket" ? "基础域名列表" : "Domain"}</label>
-                        <Textarea value={domains} onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()) })} placeholder={type === "cloudmail_gen" ? "每行一个域名，留空则使用服务默认域名" : type === "inbucket" ? "每行一个基础域名，系统会自动生成随机子域名" : type === "moemail" ? "每行一个域名" : "每行一个域名，留空则使用服务默认域名"} className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                        <Textarea
+                          value={domains}
+                          onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()) })}
+                          placeholder={type === "cloudmail_gen" ? "每行一个可用域名，必填" : type === "inbucket" ? "每行一个基础域名，系统会自动生成随机子域名" : type === "moemail" ? "每行一个域名" : "每行一个域名，留空则使用服务默认域名"}
+                          className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs"
+                          disabled={config.enabled}
+                        />
+                        {type === "cloudmail_gen" ? (
+                          <p className="text-xs text-amber-700">CloudMail 这里必须填写至少一个可用域名，空着会直接保存失败。</p>
+                        ) : null}
                       </div>
                     ) : null}
                     {type === "cloudmail_gen" ? (

@@ -57,7 +57,7 @@ function SettingsPageContent() {
       <SettingsDataController />
       <SettingsHeader />
       <Tabs defaultValue="basic" className="space-y-4">
-        <div className="sticky top-3 z-20 overflow-x-auto rounded-xl border border-stone-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur dark:border-stone-800 dark:bg-stone-950/90">
+        <div className="sticky top-3 z-20 overflow-x-auto rounded-[24px] border border-stone-200/70 bg-white/80 px-3 py-2.5 shadow-[0_18px_50px_-30px_rgba(25,33,61,0.25)] backdrop-blur-xl dark:border-stone-800/70 dark:bg-stone-950/80">
           <TabsList variant="line" className="min-w-max justify-start">
             {settingsTabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value} className="px-4">

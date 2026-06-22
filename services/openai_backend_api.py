@@ -42,6 +42,22 @@ class ImageContentPolicyError(RuntimeError):
     pass
 
 
+def _sleep_with_cancel(cancel_event: Any, seconds: float) -> None:
+    remaining = max(0.0, float(seconds))
+    if remaining <= 0:
+        if cancel_event and cancel_event.is_set():
+            raise RuntimeError("image task cancelled")
+        return
+    deadline = time.time() + remaining
+    while True:
+        if cancel_event and cancel_event.is_set():
+            raise RuntimeError("image task cancelled")
+        wait_for = min(0.5, max(0.0, deadline - time.time()))
+        if wait_for <= 0:
+            return
+        time.sleep(wait_for)
+
+
 @dataclass
 class ChatRequirements:
     """保存一次对话请求所需的 sentinel token。"""
@@ -1391,14 +1407,17 @@ class OpenAIBackendAPI:
             export_file_re: re.Pattern[str],
             timeout_secs: float,
             poll_interval_secs: float,
+            cancel_event: Any = None,
     ) -> list[EditableFileArtifact]:
         deadline = time.time() + timeout_secs
         while time.time() < deadline:
+            if cancel_event and cancel_event.is_set():
+                raise RuntimeError("image task cancelled")
             try:
                 conversation = self._get_editable_conversation_detail(conversation_id)
             except UpstreamHTTPError as exc:
                 if exc.status_code in {404, 409, 423, 429, 500, 502, 503, 504}:
-                    time.sleep(poll_interval_secs)
+                    _sleep_with_cancel(cancel_event, poll_interval_secs)
                     continue
                 raise
             targeted = self._pick_editable_target_artifacts(
@@ -1409,7 +1428,7 @@ class OpenAIBackendAPI:
             )
             if targeted:
                 return targeted
-            time.sleep(poll_interval_secs)
+            _sleep_with_cancel(cancel_event, poll_interval_secs)
         raise RuntimeError(f"timed out waiting for {primary_label}/zip outputs")
 
     def _get_editable_conversation_detail(self, conversation_id: str) -> Dict[str, Any]:
@@ -1863,7 +1882,7 @@ class OpenAIBackendAPI:
                 last_answer = answer
                 if stable_hits >= 2:
                     return last_result
-            time.sleep(poll_interval_secs)
+            _sleep_with_cancel(getattr(self, "cancel_event", None), poll_interval_secs)
         if last_result:
             return last_result
         raise RuntimeError(f"timed out waiting for search result: {conversation_id}")
@@ -2064,6 +2083,7 @@ class OpenAIBackendAPI:
             timeout_secs: float = 120.0,
             initial_file_ids: list[str] | None = None,
             initial_sediment_ids: list[str] | None = None,
+            cancel_event: Any = None,
     ) -> tuple[list[str], list[str]]:
         """Poll the conversation document until image file ids appear or budget runs out.
 
@@ -2104,12 +2124,12 @@ class OpenAIBackendAPI:
         if has_initial_ids and config.image_settle_enabled:
             settle_for = min(config.image_settle_secs, max(0.0, _remaining()))
             if settle_for > 0:
-                time.sleep(settle_for)
+                _sleep_with_cancel(cancel_event, settle_for)
         elif initial_wait > 0:
             jitter = random.uniform(0, min(2.0, initial_wait * 0.2))
             sleep_for = min(initial_wait + jitter, max(0.0, _remaining()))
             if sleep_for > 0:
-                time.sleep(sleep_for)
+                _sleep_with_cancel(cancel_event, sleep_for)
 
         def _retry_sleep(reason: str, status_code: int | None, error: str | None, retry_after: int | None) -> bool:
             # retry_after=0 means "retry immediately" — must not be coerced via falsy check.
@@ -2131,7 +2151,7 @@ class OpenAIBackendAPI:
             if error is not None:
                 log_payload["error"] = error
             logger.warning(log_payload)
-            time.sleep(sleep_for)
+            _sleep_with_cancel(cancel_event, sleep_for)
             return True
 
         last_task_error = ""
@@ -2222,14 +2242,14 @@ class OpenAIBackendAPI:
                              "settle_secs": config.image_settle_secs})
                 wait = min(config.image_settle_secs, max(0.0, _remaining()))
                 if wait > 0:
-                    time.sleep(wait)
+                    _sleep_with_cancel(cancel_event, wait)
                     continue
                 return file_ids, sediment_ids
             logger.debug({"event": "image_poll_wait", "conversation_id": conversation_id,
                           "elapsed_secs": round(time.time() - start, 1)})
             wait = min(interval, max(0.0, _remaining()))
             if wait > 0:
-                time.sleep(wait)
+                _sleep_with_cancel(cancel_event, wait)
         logger.info({
             "event": "image_poll_timeout",
             "conversation_id": conversation_id,
@@ -2420,6 +2440,7 @@ class OpenAIBackendAPI:
             sediment_ids: list[str],
             poll: bool = True,
             poll_timeout_secs: float | None = None,
+            cancel_event: Any = None,
     ) -> list[str]:
         file_ids = [item for item in file_ids if item != "file_upload"]
         sediment_ids = list(sediment_ids)
@@ -2449,6 +2470,7 @@ class OpenAIBackendAPI:
                     timeout,
                     file_ids,
                     sediment_ids,
+                    cancel_event=cancel_event,
                 )
             except ImagePollTimeoutError as exc:
                 # 如果轮询超时且有 task error（如 moderation 拦截），抛出 ImageContentPolicyError

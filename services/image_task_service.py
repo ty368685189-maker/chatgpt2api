@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,14 +13,18 @@ from typing import Any
 from services.config import DATA_DIR, config
 from services.content_filter import request_text
 from services.log_service import LOG_TYPE_CALL, log_service
+from services.proxy_service import proxy_settings
 from services.protocol import openai_v1_image_edit, openai_v1_image_generations
 
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"
 TASK_STATUS_SUCCESS = "success"
 TASK_STATUS_ERROR = "error"
+CANCELLED_STATUS = "cancelled"
 TERMINAL_STATUSES = {TASK_STATUS_SUCCESS, TASK_STATUS_ERROR}
+TERMINAL_STATUSES_WITH_CANCELLED = {TASK_STATUS_SUCCESS, TASK_STATUS_ERROR, CANCELLED_STATUS}
 UNFINISHED_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
+ALL_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING, TASK_STATUS_SUCCESS, TASK_STATUS_ERROR, CANCELLED_STATUS}
 
 
 def _now_iso() -> str:
@@ -84,7 +90,9 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
         item["progress"] = task.get("progress")
     if task.get("duration_ms") is not None:
         item["duration_ms"] = task.get("duration_ms")
-    if task.get("status") in (TASK_STATUS_RUNNING, TASK_STATUS_QUEUED):
+    if task.get("status") == CANCELLED_STATUS:
+        item["elapsed_secs"] = round(time.time() - (task.get("started_ts") or task.get("created_ts") or task.get("updated_ts") or time.time()), 1)
+    elif task.get("status") in (TASK_STATUS_RUNNING, TASK_STATUS_QUEUED):
         if task.get("status") == TASK_STATUS_RUNNING:
             # RUNNING 状态仅在 started_ts 被设置后（image_stream_resolve_start）才计时
             base_ts = task.get("started_ts")
@@ -111,6 +119,8 @@ class ImageTaskService:
         self.retention_days_getter = retention_days_getter or (lambda: config.image_retention_days)
         self._lock = threading.RLock()
         self._tasks: dict[str, dict[str, Any]] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
+        self._executor = ThreadPoolExecutor(max_workers=max(1, config.image_task_concurrency))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             self._tasks = self._load_locked()
@@ -171,7 +181,7 @@ class ImageTaskService:
         owner = _owner_id(identity)
         requested_ids = [_clean(task_id) for task_id in task_ids if _clean(task_id)]
         with self._lock:
-            if self._cleanup_locked():
+            if self._requeue_stale_locked() or self._cleanup_locked():
                 self._save_locked()
             items = []
             missing_ids = []
@@ -226,17 +236,19 @@ class ImageTaskService:
                 "created_ts": time.time(),
             }
             self._tasks[key] = task
+            self._cancel_events.pop(key, None)
             self._save_locked()
-            should_start = True
-
-        if should_start:
-            thread = threading.Thread(
-                target=self._run_task,
-                args=(key, mode, payload, dict(identity), _clean(payload.get("model"), "gpt-image-2")),
-                name=f"image-task-{task_id[:16]}",
-                daemon=True,
+            cancel_event = threading.Event()
+            self._cancel_events[key] = cancel_event
+            self._executor.submit(
+                self._run_task,
+                key,
+                mode,
+                payload,
+                dict(identity),
+                _clean(payload.get("model"), "gpt-image-2"),
+                cancel_event,
             )
-            thread.start()
         return _public_task(task)
 
     def _run_task(
@@ -246,8 +258,27 @@ class ImageTaskService:
         payload: dict[str, Any],
         identity: dict[str, object],
         model: str,
+        cancel_event: threading.Event,
     ) -> None:
         started = time.time()
+        queue_timeout_secs = max(30.0, float(config.image_task_queue_timeout_secs))
+        with self._lock:
+            task = self._tasks.get(key)
+            if task is None or task.get("status") != TASK_STATUS_QUEUED or cancel_event.is_set():
+                self._cancel_events.pop(key, None)
+                return
+            task_created_ts = float(task.get("created_ts") or task.get("updated_ts") or started)
+        if time.time() - task_created_ts > queue_timeout_secs:
+            self._update_task(
+                key,
+                status=TASK_STATUS_ERROR,
+                error="任务排队超时",
+                data=[],
+                duration_ms=int((time.time() - task_created_ts) * 1000),
+            )
+            with self._lock:
+                self._cancel_events.pop(key, None)
+            return
         self._update_task(key, status=TASK_STATUS_RUNNING, error="")
         # 创建进度回调，每个步骤完成后更新任务状态
         def progress_callback(step: str) -> None:
@@ -255,7 +286,7 @@ class ImageTaskService:
                 self._update_task(key, started_ts=time.time())
             self._update_task(key, progress=step)
         # 将进度回调添加到 payload 中（handler 会提取并传递给 ConversationRequest）
-        payload_with_progress = {**payload, "progress_callback": progress_callback}
+        payload_with_progress = {**payload, "progress_callback": progress_callback, "cancel_event": cancel_event}
         try:
             handler = self.edit_handler if mode == "edit" else self.generation_handler
             result = handler(payload_with_progress)
@@ -275,6 +306,9 @@ class ImageTaskService:
                 raise error
             usage = result.get("usage")
             duration_ms = int((time.time() - started) * 1000)
+            if cancel_event.is_set():
+                self._update_task(key, status=CANCELLED_STATUS, error="任务已取消", data=[], duration_ms=duration_ms)
+                return
             self._update_task(key, status=TASK_STATUS_SUCCESS, data=data, usage=usage, error="", duration_ms=duration_ms)
             # Save to user works
             try:
@@ -310,6 +344,9 @@ class ImageTaskService:
             account_email = _clean(getattr(exc, "account_email", ""))
             conversation_id = _clean(getattr(exc, "conversation_id", ""))
             duration_ms = int((time.time() - started) * 1000)
+            if cancel_event.is_set() or isinstance(exc, RuntimeError) and "cancelled" in error_message.lower():
+                self._update_task(key, status=CANCELLED_STATUS, error="任务已取消", data=[], duration_ms=duration_ms)
+                return
             self._update_task(key, status=TASK_STATUS_ERROR, error=error_message, data=[],
                               duration_ms=duration_ms,
                               **({"conversation_id": conversation_id} if conversation_id else {}))
@@ -324,6 +361,9 @@ class ImageTaskService:
                 error=error_message,
                 account_email=account_email,
             )
+        finally:
+            with self._lock:
+                self._cancel_events.pop(key, None)
 
     def _log_call(
         self,
@@ -375,6 +415,15 @@ class ImageTaskService:
             task["updated_ts"] = time.time()
             self._save_locked()
 
+    def _cancel_task_locked(self, key: str, task: dict[str, Any]) -> None:
+        task["status"] = CANCELLED_STATUS
+        task["error"] = "任务已取消"
+        task["updated_at"] = _now_iso()
+        task["updated_ts"] = time.time()
+        cancel_event = self._cancel_events.get(key)
+        if cancel_event:
+            cancel_event.set()
+
     def _load_locked(self) -> dict[str, dict[str, Any]]:
         if not self.path.exists():
             return {}
@@ -394,7 +443,7 @@ class ImageTaskService:
             if not task_id or not owner:
                 continue
             status = _clean(item.get("status"))
-            if status not in {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING, TASK_STATUS_SUCCESS, TASK_STATUS_ERROR}:
+            if status not in ALL_STATUSES:
                 status = TASK_STATUS_ERROR
             task = {
                 "id": task_id,
@@ -426,8 +475,18 @@ class ImageTaskService:
     def _save_locked(self) -> None:
         items = sorted(self._tasks.values(), key=lambda item: str(item.get("updated_at") or ""), reverse=True)
         tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp_path.write_text(json.dumps({"tasks": items}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp_path.replace(self.path)
+        payload = json.dumps({"tasks": items}, ensure_ascii=False, indent=2) + "\n"
+        tmp_path.write_text(payload, encoding="utf-8")
+        last_error: Exception | None = None
+        for _ in range(5):
+            try:
+                os.replace(tmp_path, self.path)
+                return
+            except (PermissionError, FileNotFoundError) as exc:
+                last_error = exc
+                time.sleep(0.02)
+        if last_error is not None:
+            self.path.write_text(payload, encoding="utf-8")
 
     def _recover_unfinished_locked(self) -> bool:
         changed = False
@@ -437,6 +496,25 @@ class ImageTaskService:
                 task["error"] = "服务已重启，未完成的图片任务已中断"
                 task["updated_at"] = _now_iso()
                 changed = True
+        self._cancel_events.clear()
+        return changed
+
+    def _requeue_stale_locked(self) -> bool:
+        changed = False
+        queue_timeout_secs = max(30.0, float(config.image_task_queue_timeout_secs))
+        now = time.time()
+        for task in self._tasks.values():
+            if task.get("status") != TASK_STATUS_QUEUED:
+                continue
+            created_ts = float(task.get("created_ts") or task.get("updated_ts") or now)
+            if now - created_ts <= queue_timeout_secs:
+                continue
+            task["status"] = TASK_STATUS_ERROR
+            task["error"] = "任务排队超时"
+            task["updated_at"] = _now_iso()
+            task["updated_ts"] = now
+            task["duration_ms"] = int((now - created_ts) * 1000)
+            changed = True
         return changed
 
     def _cleanup_locked(self) -> bool:
@@ -479,6 +557,7 @@ class ImageTaskService:
             model = task.get("model", "gpt-image-2")
             # 将任务状态重置为 running
             self._update_task(key, status=TASK_STATUS_RUNNING, error="")
+            task_snapshot = dict(self._tasks.get(key) or task)
 
         # 启动新线程继续轮询
         thread = threading.Thread(
@@ -488,7 +567,24 @@ class ImageTaskService:
             daemon=True,
         )
         thread.start()
-        return _public_task(task)
+        return _public_task(task_snapshot)
+
+    def cancel_task(self, identity: dict[str, object], task_id: str) -> dict[str, Any]:
+        owner = _owner_id(identity)
+        key = _task_key(owner, _clean(task_id))
+        with self._lock:
+            task = self._tasks.get(key)
+            if task is None:
+                raise ValueError("task not found")
+            if task.get("status") in TERMINAL_STATUSES_WITH_CANCELLED:
+                return _public_task(task)
+            self._cancel_task_locked(key, task)
+            self._save_locked()
+            snapshot = dict(task)
+        return _public_task(snapshot)
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _run_resume_poll(
         self,
@@ -505,14 +601,20 @@ class ImageTaskService:
             from services.openai_backend_api import OpenAIBackendAPI
             from services.protocol.conversation import format_image_result
 
-            with OpenAIBackendAPI(proxy_url=config.proxy_url or None) as backend:
+            runtime_proxy = ""
+            try:
+                runtime_proxy = proxy_settings.get_profile(upstream=True).proxy_url
+            except Exception:
+                runtime_proxy = ""
+
+            with OpenAIBackendAPI(proxy=runtime_proxy) as backend:
                 file_ids, sediment_ids = backend._poll_image_results(
                     conversation_id,
                     extra_timeout_secs,
                 )
                 if not file_ids and not sediment_ids:
                     raise RuntimeError(
-                        f"继续等待 {extra_timeout_secs} 秒后仍未找到图片结果。"
+                        f"轮询超时：继续等待 {extra_timeout_secs} 秒后仍未找到图片结果。"
                     )
 
                 image_urls = backend.resolve_conversation_image_urls(
@@ -549,6 +651,8 @@ class ImageTaskService:
             )
         except Exception as exc:
             error_message = str(exc) or "resume poll failed"
+            if "超时" in error_message or "timeout" in error_message.lower():
+                error_message = f"{error_message}，可在前端点击“继续等待”再次恢复轮询"
             duration_ms = int((time.time() - started) * 1000)
             self._update_task(key, status=TASK_STATUS_ERROR, error=error_message, data=[], duration_ms=duration_ms)
             self._log_call(

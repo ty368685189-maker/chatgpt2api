@@ -59,7 +59,7 @@ def create_app() -> FastAPI:
             return {"Cache-Control": "public, max-age=31536000, immutable"}
         return {"Cache-Control": "public, max-age=86400"}
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def serve_web(full_path: str):
         asset = resolve_web_asset(full_path)
         if asset is not None:

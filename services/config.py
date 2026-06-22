@@ -422,6 +422,20 @@ class ConfigStore:
             return 3
 
     @property
+    def image_task_concurrency(self) -> int:
+        try:
+            return max(1, int(self.data.get("image_task_concurrency", 4)))
+        except (TypeError, ValueError):
+            return 4
+
+    @property
+    def image_task_queue_timeout_secs(self) -> float:
+        try:
+            return max(30.0, float(self.data.get("image_task_queue_timeout_secs", 180.0)))
+        except (TypeError, ValueError):
+            return 180.0
+
+    @property
     def image_user_concurrency(self) -> int:
         try:
             return max(1, int(self.data.get("image_user_concurrency", 2)))
@@ -565,6 +579,8 @@ class ConfigStore:
         data["image_poll_interval_secs"] = self.image_poll_interval_secs
         data["image_poll_initial_wait_secs"] = self.image_poll_initial_wait_secs
         data["image_account_concurrency"] = self.image_account_concurrency
+        data["image_task_concurrency"] = self.image_task_concurrency
+        data["image_task_queue_timeout_secs"] = self.image_task_queue_timeout_secs
         data["image_user_concurrency"] = self.image_user_concurrency
         data["image_parallel_generation"] = self.image_parallel_generation
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts

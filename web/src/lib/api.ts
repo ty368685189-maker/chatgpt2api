@@ -169,6 +169,8 @@ export type SettingsConfig = {
   image_retention_days?: number | string;
   image_poll_timeout_secs?: number | string;
   image_account_concurrency?: number | string;
+  image_task_concurrency?: number | string;
+  image_task_queue_timeout_secs?: number | string;
   image_parallel_generation?: boolean;
   image_settle_enabled?: boolean;
   image_check_before_hit_enabled?: boolean;
@@ -279,7 +281,7 @@ export type ImageResponse = {
 
 export type ImageTask = {
   id: string;
-  status: "queued" | "running" | "success" | "error";
+  status: "queued" | "running" | "success" | "error" | "cancelled";
   mode: "generate" | "edit";
   model?: ImageModel;
   size?: string;
@@ -410,6 +412,20 @@ export async function deleteAccounts(tokens: string[]) {
 
 export async function refreshAccounts(accessTokens: string[]) {
   return httpRequest<{ progress_id: string }>("/api/accounts/refresh", {
+    method: "POST",
+    body: { access_tokens: accessTokens },
+  });
+}
+
+export async function refreshAccountTokens(accessTokens: string[]) {
+  return httpRequest<{ items: Account[]; refreshed: number; relogined?: number; errors: Array<{ access_token: string; error: string }> }>("/api/accounts/refresh-token", {
+    method: "POST",
+    body: { access_tokens: accessTokens },
+  });
+}
+
+export async function resetAccountInvalidCooldown(accessTokens: string[]) {
+  return httpRequest<{ updated: number; items: Account[] }>("/api/accounts/reset-invalid-cooldown", {
     method: "POST",
     body: { access_tokens: accessTokens },
   });
@@ -547,6 +563,12 @@ export async function resumeImagePoll(taskId: string, extraTimeoutSecs = 30) {
   return httpRequest<ImageTask>(`/api/image-tasks/${encodeURIComponent(taskId)}/resume-poll`, {
     method: "POST",
     body: { extra_timeout_secs: extraTimeoutSecs },
+  });
+}
+
+export async function cancelImageTask(taskId: string) {
+  return httpRequest<ImageTask>(`/api/image-tasks/${encodeURIComponent(taskId)}/cancel`, {
+    method: "POST",
   });
 }
 

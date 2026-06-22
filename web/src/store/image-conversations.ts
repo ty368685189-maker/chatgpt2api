@@ -44,7 +44,7 @@ export type StoredReferenceImage = {
 export type StoredImage = {
   id: string;
   taskId?: string;
-  status?: "loading" | "success" | "error";
+  status?: "loading" | "success" | "error" | "cancelled";
   taskStatus?: "queued" | "running";
   progress?: string;
   b64_json?: string;
@@ -111,6 +111,9 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
   if (image.status === "loading" || image.status === "error" || image.status === "success") {
     return normalized;
   }
+  if (image.status === "cancelled") {
+    return normalized;
+  }
   return {
     ...normalized,
     status: image.b64_json || image.url ? "success" : "loading",
@@ -164,7 +167,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
   const derivedStatus: ImageTurnStatus =
     normalizedImages.some((image) => image.status === "loading")
       ? "generating"
-      : normalizedImages.some((image) => image.status === "error")
+      : normalizedImages.some((image) => image.status === "error" || image.status === "cancelled")
         ? "error"
         : "success";
 

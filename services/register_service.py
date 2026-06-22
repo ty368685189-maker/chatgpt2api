@@ -59,6 +59,89 @@ def _normalize(raw: dict) -> dict:
     return cfg
 
 
+def _provider_domains(provider: dict) -> list[str]:
+    domains = provider.get("domain")
+    if isinstance(domains, list):
+        return [str(item).strip() for item in domains if str(item).strip()]
+    text = str(domains or "").strip()
+    return [text] if text else []
+
+
+def _validate_provider_config(provider: dict) -> list[str]:
+    if not isinstance(provider, dict) or not provider.get("enable"):
+        return []
+
+    provider_type = str(provider.get("type") or "").strip()
+    issues: list[str] = []
+
+    if provider_type == "cloudmail_gen":
+        if not str(provider.get("api_base") or "").strip():
+            issues.append("CloudMail URL 不能为空")
+        if not str(provider.get("admin_email") or "").strip():
+            issues.append("CloudMail 管理员邮箱不能为空")
+        if not str(provider.get("admin_password") or "").strip():
+            issues.append("CloudMail 管理员密码不能为空")
+        if not _provider_domains(provider):
+            issues.append("CloudMail 至少要填写一个可用域名")
+    elif provider_type == "cloudflare_temp_email":
+        if not str(provider.get("api_base") or "").strip():
+            issues.append("API Base 不能为空")
+        if not str(provider.get("admin_password") or "").strip():
+            issues.append("Admin Password 不能为空")
+        if not _provider_domains(provider):
+            issues.append("Cloudflare 临时邮箱至少要填写一个域名")
+    elif provider_type == "ddg_mail":
+        if not str(provider.get("api_base") or provider.get("cf_api_base") or "").strip():
+            issues.append("DDG 中转 API Base 不能为空")
+        if not str(provider.get("ddg_token") or "").strip():
+            issues.append("DDG Token 不能为空")
+        if not str(provider.get("cf_inbox_jwt") or "").strip():
+            issues.append("CF Inbox JWT 不能为空")
+        if not str(provider.get("admin_password") or "").strip() and not str(provider.get("cf_api_key") or "").strip():
+            issues.append("DDG 中转需要管理员密码或 API Key")
+    elif provider_type == "moemail":
+        if not str(provider.get("api_base") or "").strip():
+            issues.append("API Base 不能为空")
+        if not str(provider.get("api_key") or "").strip():
+            issues.append("登录密钥不能为空")
+        if not _provider_domains(provider):
+            issues.append("MoEmail 至少要填写一个域名")
+    elif provider_type == "inbucket":
+        if not str(provider.get("api_base") or "").strip():
+            issues.append("API Base 不能为空")
+        if not _provider_domains(provider):
+            issues.append("Inbucket 至少要填写一个基础域名")
+    elif provider_type == "duckmail":
+        if not str(provider.get("api_key") or "").strip():
+            issues.append("DuckMail 登录密钥不能为空")
+    elif provider_type == "gptmail":
+        if not str(provider.get("api_key") or "").strip():
+            issues.append("GPTMail 登录密钥不能为空")
+    elif provider_type == "yyds_mail":
+        if not str(provider.get("api_key") or "").strip():
+            issues.append("YYDS Mail 登录密钥不能为空")
+    elif provider_type == "outlook_token":
+        if not mail_provider.parse_outlook_credentials(str(provider.get("mailboxes") or "")):
+            issues.append("Outlook 邮箱池至少要导入一条 email----password----client_id----refresh_token")
+
+    return issues
+
+
+def _validate_register_config(cfg: dict) -> None:
+    mail = cfg.get("mail")
+    if not isinstance(mail, dict):
+        return
+    providers = mail.get("providers")
+    if not isinstance(providers, list):
+        return
+    for provider in providers:
+        if not isinstance(provider, dict):
+            continue
+        issues = _validate_provider_config(provider)
+        if issues:
+            raise ValueError("；".join(issues))
+
+
 class RegisterService:
     def __init__(self, store_file: Path):
         self._store_file = store_file
@@ -162,7 +245,9 @@ class RegisterService:
     def update(self, updates: dict) -> dict:
         with self._lock:
             self._merge_outlook_pools(updates)
-            self._config = _normalize({**self._config, **updates})
+            next_config = _normalize({**self._config, **updates})
+            _validate_register_config(next_config)
+            self._config = next_config
             self._drop_mail_proxy()
             openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
             self._save()
@@ -170,6 +255,7 @@ class RegisterService:
 
     def start(self) -> dict:
         with self._lock:
+            _validate_register_config(self._config)
             if self._runner and self._runner.is_alive():
                 self._config["enabled"] = True
                 self._save()

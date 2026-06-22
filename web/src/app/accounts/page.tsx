@@ -50,6 +50,8 @@ import {
   fetchReLoginProgress,
   reLoginAccounts,
   refreshAccounts,
+  refreshAccountTokens,
+  resetAccountInvalidCooldown,
   testProxy,
   updateAccount,
   type Account,
@@ -203,6 +205,7 @@ function AccountsPageContent() {
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingTokens, setRefreshingTokens] = useState<Set<string>>(new Set());
+  const [refreshingKeepaliveTokens, setRefreshingKeepaliveTokens] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isRelogining, setIsRelogining] = useState(false);
@@ -529,6 +532,37 @@ function AccountsPageContent() {
     }
   };
 
+  const handleRefreshAccountTokens = async (accessTokens: string[]) => {
+    if (accessTokens.length === 0) {
+      toast.error("没有需要刷新的账户");
+      return;
+    }
+
+    setRefreshingKeepaliveTokens((prev) => new Set([...prev, ...accessTokens]));
+    try {
+      const result = await refreshAccountTokens(accessTokens);
+      setAccounts(result.items);
+      setSelectedIds((prev) => prev.filter((id) => result.items.some((item) => item.access_token === id)));
+      if ((result.errors ?? []).length > 0) {
+        const firstError = result.errors?.[0]?.error;
+        toast.error(
+          `刷新 token 成功 ${result.refreshed ?? 0} 个，失败 ${(result.errors ?? []).length} 个${firstError ? `，首个错误：${firstError}` : ""}`,
+        );
+      } else {
+        toast.success(`已刷新 ${result.refreshed ?? 0} 个账号的 token`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "刷新 token 失败";
+      toast.error(message);
+    } finally {
+      setRefreshingKeepaliveTokens((prev) => {
+        const next = new Set(prev);
+        accessTokens.forEach((token) => next.delete(token));
+        return next;
+      });
+    }
+  };
+
   const pollRefreshProgress = async (
     progressId: string,
     onUpdate: (p: RefreshProgressResponse) => void,
@@ -679,6 +713,31 @@ function AccountsPageContent() {
     }
   };
 
+  const handleResetInvalidCooldown = async (accessTokens: string[]) => {
+    if (accessTokens.length === 0) {
+      toast.error("请先选择要处理的账户");
+      return;
+    }
+
+    const targetTokens = accessTokens.filter((token) => {
+      const account = accounts.find((item) => item.access_token === token);
+      return account?.status === "异常" || account?.status === "限流";
+    });
+
+    if (targetTokens.length === 0) {
+      toast.error("选中账号中没有异常或限流账号");
+      return;
+    }
+
+    try {
+      const data = await resetAccountInvalidCooldown(targetTokens);
+      setAccounts(data.items);
+      toast.success(`已清理 ${data.updated} 个账号的异常冷却`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "清理异常冷却失败");
+    }
+  };
+
   const openEditDialog = (account: Account) => {
     setEditingAccount(account);
     setEditStatus(account.status);
@@ -737,15 +796,25 @@ function AccountsPageContent() {
 
   return (
     <>
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <div className="text-xs font-semibold tracking-[0.18em] text-stone-500 uppercase">
-            Account Pool
+      <section className="overflow-hidden rounded-[28px] border border-white/70 bg-white/75 px-5 py-5 shadow-[0_20px_60px_-36px_rgba(25,33,61,0.22)] backdrop-blur-sm sm:px-6 sm:py-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <div className="inline-flex rounded-full bg-stone-100 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-stone-500 uppercase dark:bg-white/8 dark:text-stone-300">
+              Account Pool
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">号池管理</h1>
+              <p className="max-w-2xl text-sm leading-6 text-stone-500">
+                这里能快速看到账户状态、恢复时间和在途情况。选中账号后，刷新、恢复、清理冷却都在同一处完成。
+              </p>
+            </div>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">号池管理</h1>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">支持批量处理</span>
+            <span className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">优先恢复异常账号</span>
+          </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           <Button
             variant="outline"
             className="h-10 rounded-xl border-stone-200 bg-white/80 px-3 text-stone-700 hover:bg-white sm:px-4"
@@ -1044,6 +1113,17 @@ function AccountsPageContent() {
                 </Button>
                 <Button
                   variant="ghost"
+                  className="h-8 justify-start rounded-lg px-2 text-xs text-stone-600 hover:bg-stone-100 hover:text-stone-800 sm:px-3 sm:text-sm"
+                  onClick={() => void handleResetInvalidCooldown(selectedTokens)}
+                  disabled={selectedTokens.length === 0}
+                  title="清理异常状态的冷却时间，便于尽快再次恢复"
+                >
+                  <RefreshCw className="size-4" />
+                  <span className="hidden sm:inline">清理异常冷却</span>
+                  <span className="sm:hidden">清理冷却</span>
+                </Button>
+                <Button
+                  variant="ghost"
                   className="h-8 justify-start rounded-lg px-2 text-xs text-rose-500 hover:bg-rose-50 hover:text-rose-600 sm:px-3 sm:text-sm"
                   onClick={() => void handleDeleteTokens(abnormalTokens)}
                   disabled={abnormalTokens.length === 0 || isDeleting}
@@ -1217,10 +1297,11 @@ function AccountsPageContent() {
                             <button
                               type="button"
                               className="rounded-lg p-2 transition hover:bg-stone-100 hover:text-stone-700"
-                              onClick={() => void handleRefreshAccounts([account.access_token])}
-                              disabled={isRefreshing || refreshingTokens.has(account.access_token)}
+                              onClick={() => void handleRefreshAccountTokens([account.access_token])}
+                              disabled={isRefreshing || refreshingTokens.has(account.access_token) || refreshingKeepaliveTokens.has(account.access_token)}
+                              title="刷新 refresh token / access token"
                             >
-                              <RefreshCw className={cn("size-4", (isRefreshing || refreshingTokens.has(account.access_token)) ? "animate-spin" : "")} />
+                              <RefreshCw className={cn("size-4", (isRefreshing || refreshingTokens.has(account.access_token) || refreshingKeepaliveTokens.has(account.access_token)) ? "animate-spin" : "")} />
                             </button>
                             <button
                               type="button"

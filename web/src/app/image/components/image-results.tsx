@@ -1,12 +1,27 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
-import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import {
+  Clock3,
+  Download,
+  EyeOff,
+  LoaderCircle,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  SquareStop,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { getImageThumbnailUrl } from "@/components/image-thumbnail";
 import { cn } from "@/lib/utils";
-import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
+import type {
+  ImageConversation,
+  ImageTurnStatus,
+  StoredImage,
+  StoredReferenceImage,
+} from "@/store/image-conversations";
 import webConfig from "@/constants/common-env";
 
 export type ImageLightboxItem = {
@@ -19,19 +34,247 @@ export type ImageLightboxItem = {
 type ImageResultsProps = {
   selectedConversation: ImageConversation | null;
   onOpenLightbox: (images: ImageLightboxItem[], index: number) => void;
-  onContinueEdit: (conversationId: string, image: StoredImage | StoredReferenceImage) => void;
+  onContinueEdit: (
+    conversationId: string,
+    image: StoredImage | StoredReferenceImage,
+  ) => void;
   onDeletePrompt: (conversationId: string, turnId: string) => void;
   onDeleteResults: (conversationId: string, turnId: string) => void;
-  onReuseTurnConfig: (conversationId: string, turnId: string) => void | Promise<void>;
-  onRegenerateTurn: (conversationId: string, turnId: string) => void | Promise<void>;
-  onRetryImage: (conversationId: string, turnId: string, imageId: string) => void | Promise<void>;
+  onReuseTurnConfig: (
+    conversationId: string,
+    turnId: string,
+  ) => void | Promise<void>;
+  onRegenerateTurn: (
+    conversationId: string,
+    turnId: string,
+  ) => void | Promise<void>;
+  onRetryImage: (
+    conversationId: string,
+    turnId: string,
+    imageId: string,
+  ) => void | Promise<void>;
+  onCancelImage: (
+    conversationId: string,
+    taskId: string,
+  ) => void | Promise<void>;
+  isCancellingTask?: (taskId: string) => boolean;
   onTimeoutRetryContinue: (taskId: string) => void | Promise<void>;
-  onDismissErrors: (conversationId: string, turnId: string) => void | Promise<void>;
+  onDismissErrors: (
+    conversationId: string,
+    turnId: string,
+  ) => void | Promise<void>;
   formatConversationTime: (value: string) => string;
 };
 
 // Blob URL 缓存：避免 base64 超长字符串在 DOM 中，改用短小的 blob: URL
 const b64BlobUrlCache = new Map<string, string>();
+
+const zipCrcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let crc = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+    table[index] = crc >>> 0;
+  }
+  return table;
+})();
+
+function createZipBytePart(value: number, size: 2 | 4) {
+  const bytes = new Uint8Array(size);
+  for (let index = 0; index < size; index += 1) {
+    bytes[index] = (value >>> (8 * index)) & 0xff;
+  }
+  return bytes;
+}
+
+function concatBytes(...parts: Uint8Array[]) {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const merged = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    merged.set(part, offset);
+    offset += part.length;
+  }
+  return merged;
+}
+
+function getZipDateParts(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    time:
+      ((date.getHours() & 0x1f) << 11) |
+      ((date.getMinutes() & 0x3f) << 5) |
+      Math.floor(date.getSeconds() / 2),
+    date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+  };
+}
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = zipCrcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (~crc) >>> 0;
+}
+
+async function getStoredImageBlob(image: StoredImage) {
+  if (image.b64_json) {
+    const binary = atob(image.b64_json);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: "image/png" });
+  }
+
+  if (!image.url) {
+    throw new Error("图片地址为空");
+  }
+
+  let targetUrl = image.url;
+  const filesIndex = image.url.indexOf("/files/");
+  if (filesIndex !== -1) {
+    const relativePath = image.url.substring(filesIndex);
+    const baseUrl = webConfig.apiUrl.replace(/\/$/, "");
+    targetUrl = `${baseUrl}${relativePath}`;
+  } else if (!image.url.startsWith("http")) {
+    targetUrl = `${window.location.origin}${image.url}`;
+  }
+
+  const res = await fetch(targetUrl);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.blob();
+}
+
+async function buildZipBlob(
+  files: Array<{ name: string; blob: Blob }>,
+): Promise<Blob> {
+  const encoder = new TextEncoder();
+  const localChunks: Uint8Array[] = [];
+  const centralChunks: Uint8Array[] = [];
+  let offset = 0;
+  const { time, date } = getZipDateParts();
+
+  for (const file of files) {
+    const fileNameBytes = encoder.encode(file.name);
+    const fileBytes = new Uint8Array(await file.blob.arrayBuffer());
+    const crc = crc32(fileBytes);
+
+    const localHeader = concatBytes(
+      createZipBytePart(0x04034b50, 4),
+      createZipBytePart(20, 2),
+      createZipBytePart(0x0800, 2),
+      createZipBytePart(0, 2),
+      createZipBytePart(time, 2),
+      createZipBytePart(date, 2),
+      createZipBytePart(crc, 4),
+      createZipBytePart(fileBytes.length, 4),
+      createZipBytePart(fileBytes.length, 4),
+      createZipBytePart(fileNameBytes.length, 2),
+      createZipBytePart(0, 2),
+      fileNameBytes,
+    );
+    localChunks.push(localHeader, fileBytes);
+
+    const centralHeader = concatBytes(
+      createZipBytePart(0x02014b50, 4),
+      createZipBytePart(20, 2),
+      createZipBytePart(20, 2),
+      createZipBytePart(0x0800, 2),
+      createZipBytePart(0, 2),
+      createZipBytePart(time, 2),
+      createZipBytePart(date, 2),
+      createZipBytePart(crc, 4),
+      createZipBytePart(fileBytes.length, 4),
+      createZipBytePart(fileBytes.length, 4),
+      createZipBytePart(fileNameBytes.length, 2),
+      createZipBytePart(0, 2),
+      createZipBytePart(0, 2),
+      createZipBytePart(0, 2),
+      createZipBytePart(0, 2),
+      createZipBytePart(0, 4),
+      createZipBytePart(offset, 4),
+      fileNameBytes,
+    );
+    centralChunks.push(centralHeader);
+    offset += localHeader.length + fileBytes.length;
+  }
+
+  const centralDirectory = concatBytes(...centralChunks);
+  const endOfCentralDirectory = concatBytes(
+    createZipBytePart(0x06054b50, 4),
+    createZipBytePart(0, 2),
+    createZipBytePart(0, 2),
+    createZipBytePart(files.length, 2),
+    createZipBytePart(files.length, 2),
+    createZipBytePart(centralDirectory.length, 4),
+    createZipBytePart(offset, 4),
+    createZipBytePart(0, 2),
+  );
+
+  return new Blob([...localChunks, centralDirectory, endOfCentralDirectory], {
+    type: "application/zip",
+  });
+}
+
+function triggerDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadStoredImage(image: StoredImage, fileName: string) {
+  try {
+    const blob = await getStoredImageBlob(image);
+    triggerDownload(blob, fileName);
+  } catch (err) {
+    console.error("Failed to download image:", err);
+    if (image.url) {
+      window.open(image.url, "_blank");
+    }
+  }
+}
+
+async function downloadImageBatch(
+  images: StoredImage[],
+  filePrefix: string,
+) {
+  const files: Array<{ name: string; blob: Blob }> = [];
+  let failedCount = 0;
+
+  for (let index = 0; index < images.length; index += 1) {
+    try {
+      const blob = await getStoredImageBlob(images[index]);
+      files.push({
+        name: `${filePrefix}-${String(index + 1).padStart(2, "0")}.png`,
+        blob,
+      });
+    } catch (err) {
+      failedCount += 1;
+      console.error("Failed to prepare batch image:", err);
+    }
+  }
+
+  if (files.length === 0) {
+    throw new Error("没有可下载的图片");
+  }
+
+  const zipBlob = await buildZipBlob(files);
+  triggerDownload(zipBlob, `${filePrefix}.zip`);
+  return {
+    downloadedCount: files.length,
+    failedCount,
+  };
+}
 
 function getStoredImageSrc(image: StoredImage) {
   if (image.b64_json) {
@@ -49,50 +292,6 @@ function getStoredImageSrc(image: StoredImage) {
   return image.url || "";
 }
 
-async function downloadStoredImage(image: StoredImage, index: number) {
-  let blob: Blob | null = null;
-  try {
-    if (image.b64_json) {
-      const binary = atob(image.b64_json);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      blob = new Blob([bytes], { type: "image/png" });
-    } else if (image.url) {
-      let targetUrl = image.url;
-      const filesIndex = image.url.indexOf("/files/");
-      if (filesIndex !== -1) {
-        const relativePath = image.url.substring(filesIndex);
-        const baseUrl = webConfig.apiUrl.replace(/\/$/, "");
-        targetUrl = `${baseUrl}${relativePath}`;
-      } else if (!image.url.startsWith("http")) {
-        targetUrl = `${window.location.origin}${image.url}`;
-      }
-      const res = await fetch(targetUrl);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-      blob = await res.blob();
-    } else {
-      return;
-    }
-  } catch (err) {
-    console.error("Failed to download image:", err);
-    // 如果 fetch 失败，尝试直接在新窗口打开
-    if (image.url) {
-      window.open(image.url, "_blank");
-    }
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `image-${index + 1}.png`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 export function ImageResults({
   selectedConversation,
   onOpenLightbox,
@@ -102,16 +301,23 @@ export function ImageResults({
   onReuseTurnConfig,
   onRegenerateTurn,
   onRetryImage,
+  onCancelImage,
+  isCancellingTask,
   onTimeoutRetryContinue,
   onDismissErrors,
   formatConversationTime,
 }: ImageResultsProps) {
   const imageDimensionsRef = useRef<Record<string, string>>({});
   const [currentTime, setCurrentTime] = useState(Date.now());
-  
+  const [downloadingTurnId, setDownloadingTurnId] = useState<string | null>(
+    null,
+  );
+
   // 仅在存在 loading 图片时启动定时器，避免空闲时无谓重渲染
   const hasLoadingImages = selectedConversation?.turns.some(
-    (turn) => !turn.resultsDeleted && turn.images.some((image) => image.status === "loading"),
+    (turn) =>
+      !turn.resultsDeleted &&
+      turn.images.some((image) => image.status === "loading"),
   );
   useEffect(() => {
     if (!hasLoadingImages) return;
@@ -131,23 +337,25 @@ export function ImageResults({
 
   if (!selectedConversation) {
     return (
-      <div className="flex min-h-[120px] items-center justify-center text-center sm:min-h-[220px]">
+      <div className="flex min-h-[88px] items-start justify-center pt-3 text-center sm:min-h-[220px] sm:items-center sm:pt-0">
         <div className="max-w-2xl px-4">
           <h1
-            className="text-[22px] font-semibold tracking-tight text-stone-950 sm:text-2xl md:text-[38px]"
+            className="text-[18px] font-semibold tracking-tight text-stone-950 sm:text-2xl md:text-[38px]"
             style={{
-              fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
+              fontFamily:
+                '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
             先输入一句想法
           </h1>
           <p
-            className="mx-auto mt-2 max-w-[280px] text-xs leading-5 italic tracking-[0.01em] text-stone-500 sm:mt-3 sm:max-w-none sm:text-sm sm:leading-6"
+            className="mx-auto mt-1.5 max-w-[240px] text-[10px] leading-5 italic tracking-[0.01em] text-stone-500 sm:mt-3 sm:max-w-none sm:text-sm sm:leading-6"
             style={{
-              fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
+              fontFamily:
+                '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
-            先发起一轮生成，后面还能继续改图、重试或复用配置。
+            先发起一轮生成，再继续改图、重试或复用配置。
           </p>
         </div>
       </div>
@@ -155,52 +363,63 @@ export function ImageResults({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5 sm:gap-8">
+    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-2 sm:gap-8">
       {selectedConversation.turns.map((turn, turnIndex) => {
-        const referenceLightboxImages = turn.referenceImages.map((image, index) => ({
-          id: `${turn.id}-reference-${index}`,
-          src: image.dataUrl,
-        }));
+        const referenceLightboxImages = turn.referenceImages.map(
+          (image, index) => ({
+            id: `${turn.id}-reference-${index}`,
+            src: image.dataUrl,
+          }),
+        );
         const successfulTurnImages = turn.images.flatMap((image) => {
-          const src = image.status === "success" ? getStoredImageSrc(image) : "";
+          const src =
+            image.status === "success" ? getStoredImageSrc(image) : "";
           return src
             ? [
                 {
                   id: image.id,
                   src,
-                  sizeLabel: image.b64_json ? formatBase64ImageSize(image.b64_json) : undefined,
+                  sizeLabel: image.b64_json
+                    ? formatBase64ImageSize(image.b64_json)
+                    : undefined,
                   dimensions: imageDimensionsRef.current[image.id],
                 },
               ]
             : [];
         });
+        const downloadableTurnImages = turn.images.filter(
+          (image): image is StoredImage => image.status === "success",
+        );
+        const isDownloadingTurn = downloadingTurnId === turn.id;
 
         return (
-          <div key={turn.id} className="flex flex-col gap-3 sm:gap-4">
+          <div key={turn.id} className="flex flex-col gap-1.5 sm:gap-4">
             {!turn.promptDeleted ? (
               <div className="flex justify-end">
-                <div className="max-w-[90%] px-1 py-1 text-[14px] leading-6 text-stone-900 sm:max-w-[82%] sm:text-[15px] sm:leading-7">
-                  <div className="mb-1.5 flex flex-wrap justify-end gap-2 text-[11px] text-stone-400 sm:mb-2">
+                <div className="max-w-[88%] px-1 py-0.5 text-[12px] leading-6 text-stone-900 sm:max-w-[82%] sm:text-[15px] sm:leading-7">
+                  <div className="mb-1 hidden flex-wrap justify-end gap-2 text-[10px] text-stone-400 sm:flex sm:mb-2">
                     <span>第 {turnIndex + 1} 轮</span>
-                    <span>
-                      {turn.mode === "edit" ? "编辑图" : "文生图"}
-                    </span>
+                    <span>{turn.mode === "edit" ? "编辑图" : "文生图"}</span>
                     <span>{getTurnStatusLabel(turn.status)}</span>
                     <span>{formatConversationTime(turn.createdAt)}</span>
                   </div>
-                  <div className="text-right">{turn.prompt}</div>
-                  <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                  <div className="text-right leading-6">{turn.prompt}</div>
+                  <div className="mt-1 flex flex-wrap justify-end gap-1 sm:mt-1.5">
                     <button
                       type="button"
-                      onClick={() => void onReuseTurnConfig(selectedConversation.id, turn.id)}
-                      className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600 transition hover:bg-stone-200 hover:text-stone-900"
+                      onClick={() =>
+                        void onReuseTurnConfig(selectedConversation.id, turn.id)
+                      }
+                      className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-[8px] font-medium text-stone-600 transition hover:bg-stone-200 hover:text-stone-900 sm:text-[10px]"
                     >
                       复用配置
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDeletePrompt(selectedConversation.id, turn.id)}
-                      className="inline-flex size-6 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
+                      onClick={() =>
+                        onDeletePrompt(selectedConversation.id, turn.id)
+                      }
+                      className="inline-flex size-5 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
                       aria-label="删除提示词记录"
                     >
                       <Trash2 className="size-3" />
@@ -212,17 +431,24 @@ export function ImageResults({
 
             {!turn.resultsDeleted ? (
               <div className="flex justify-start">
-                <div className="w-full p-1">
+                <div className="w-full p-0.5 sm:p-1">
                   {turn.referenceImages.length > 0 ? (
-                    <div className="mb-4 flex flex-col items-end">
-                      <div className="mb-3 text-xs font-medium text-stone-500">本轮参考图</div>
-                      <div className="flex flex-wrap justify-end gap-3">
+                    <div className="mb-2 flex flex-col items-end sm:mb-4">
+                      <div className="mb-1 text-[10px] font-medium text-stone-500 sm:mb-3 sm:text-xs">
+                        本轮参考图
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-1 sm:gap-3">
                         {turn.referenceImages.map((image, index) => (
-                          <div key={`${turn.id}-${image.name}-${index}`} className="flex flex-col items-end gap-2">
+                          <div
+                            key={`${turn.id}-${image.name}-${index}`}
+                            className="flex flex-col items-end gap-0.5 sm:gap-2"
+                          >
                             <button
                               type="button"
-                              onClick={() => onOpenLightbox(referenceLightboxImages, index)}
-                              className="group relative h-24 w-24 overflow-hidden border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300"
+                              onClick={() =>
+                                onOpenLightbox(referenceLightboxImages, index)
+                              }
+                              className="group relative h-14 w-14 overflow-hidden border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300 sm:h-24 sm:w-24"
                               aria-label={`预览参考图 ${image.name || index + 1}`}
                             >
                               <img
@@ -234,11 +460,13 @@ export function ImageResults({
                             <Button
                               variant="outline"
                               size="sm"
-                              className="rounded-full border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
-                              onClick={() => onContinueEdit(selectedConversation.id, image)}
+                              className="h-7 rounded-full border-stone-200 bg-white px-2 text-[9px] text-stone-700 hover:bg-stone-50 sm:h-9 sm:px-3 sm:text-xs"
+                              onClick={() =>
+                                onContinueEdit(selectedConversation.id, image)
+                              }
                             >
-                              <Sparkles className="size-4" />
-                              加入编辑
+                              <Sparkles className="size-3.5 sm:size-4" />
+                              <span className="hidden sm:inline">加入编辑</span>
                             </Button>
                           </div>
                         ))}
@@ -246,33 +474,48 @@ export function ImageResults({
                     </div>
                   ) : null}
 
-                  <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500 sm:mb-4 sm:gap-2 sm:text-xs">
-                    <span className="rounded-full bg-stone-100 px-3 py-1">{turn.count} 张</span>
-                    <span className="rounded-full bg-stone-100 px-3 py-1">{getTurnStatusLabel(turn.status)}</span>
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[8px] text-stone-500 sm:mb-4 sm:gap-2 sm:text-xs">
+                    <span className="rounded-full bg-stone-100 px-2 py-0.5 sm:px-3 sm:py-1">
+                      {turn.count} 张
+                    </span>
+                    <span className="rounded-full bg-stone-100 px-2 py-0.5 sm:px-3 sm:py-1">
+                      {getTurnStatusLabel(turn.status)}
+                    </span>
                     {turn.status === "queued" ? (
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">等待当前对话中的前序任务完成</span>
+                      <span className="hidden rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 sm:inline-flex sm:px-3 sm:py-1">
+                        等待当前对话中的前序任务完成
+                      </span>
                     ) : null}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 sm:block sm:columns-2 sm:gap-4 sm:space-y-4 xl:columns-3">
+                  <div className="grid grid-cols-1 gap-1.5 sm:block sm:columns-2 sm:gap-4 sm:space-y-4 xl:columns-3">
                     {turn.images.map((image, index) => {
-                      const imageSrc = image.status === "success" ? getStoredImageSrc(image) : "";
+                      const imageSrc =
+                        image.status === "success"
+                          ? getStoredImageSrc(image)
+                          : "";
                       if (image.status === "success" && imageSrc) {
-                        const currentIndex = successfulTurnImages.findIndex((item) => item.id === image.id);
-                        const sizeLabel = image.b64_json ? formatBase64ImageSize(image.b64_json) : "";
+                        const currentIndex = successfulTurnImages.findIndex(
+                          (item) => item.id === image.id,
+                        );
+                        const sizeLabel = image.b64_json
+                          ? formatBase64ImageSize(image.b64_json)
+                          : "";
                         const dimensions = imageDimensionsRef.current[image.id];
-                        const imageMeta = [sizeLabel, dimensions].filter(Boolean).join(" · ");
+                        const imageMeta = [sizeLabel, dimensions]
+                          .filter(Boolean)
+                          .join(" · ");
 
                         return (
-                          <div
-                            key={image.id}
-                            className="break-inside-avoid"
-                          >
+                          <div key={image.id} className="break-inside-avoid">
                             <LazyImage
                               src={getImageThumbnailUrl(imageSrc)}
                               fullSrc={imageSrc}
                               alt={`Generated result ${index + 1}`}
-                              className="group block aspect-square w-full cursor-zoom-in overflow-hidden rounded-xl sm:aspect-auto"
+                              className={cn(
+                                "group block w-full cursor-zoom-in overflow-hidden rounded-lg sm:rounded-xl",
+                                getTurnAspectClass(turn.ratio),
+                              )}
                               onLoad={(event) => {
                                 updateImageDimensions(
                                   image.id,
@@ -280,33 +523,60 @@ export function ImageResults({
                                   event.currentTarget.naturalHeight,
                                 );
                               }}
-                              onOpen={() => onOpenLightbox(successfulTurnImages, currentIndex)}
+                              onOpen={() =>
+                                onOpenLightbox(
+                                  successfulTurnImages,
+                                  currentIndex,
+                                )
+                              }
                             />
-                            <div className="flex flex-col gap-1 px-0.5 py-1 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-3 sm:text-xs">
+                            <div className="flex flex-col gap-0.5 px-0.5 py-0.5 text-[8px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-2 sm:text-xs">
                               <div className="min-w-0 text-stone-500">
                                 <span>结果 {index + 1}</span>
-                                {image.durationMs != null ? <span className="text-stone-400 sm:ml-2">{formatDuration(image.durationMs)}</span> : null}
-                                {imageMeta ? <span className="block text-stone-400">{imageMeta}</span> : null}
+                                {image.durationMs != null ? (
+                                  <span className="hidden text-stone-400 sm:ml-2 sm:inline">
+                                    {formatDuration(image.durationMs)}
+                                  </span>
+                                ) : null}
+                                {imageMeta ? (
+                                  <span className="hidden text-stone-400 sm:block">
+                                    {imageMeta}
+                                  </span>
+                                ) : null}
                               </div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-0.5">
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
-                                  onClick={() => onContinueEdit(selectedConversation.id, image)}
+                                  className="h-6 w-6 rounded-full border-stone-200 bg-white px-0 text-[9px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
+                                  onClick={() =>
+                                    onContinueEdit(
+                                      selectedConversation.id,
+                                      image,
+                                    )
+                                  }
                                   aria-label="加入编辑"
                                 >
-                                  <Sparkles className="size-3 sm:size-4" />
-                                  <span className="hidden sm:inline">加入编辑</span>
+                                  <Sparkles className="size-3" />
+                                  <span className="hidden sm:inline">
+                                    加入编辑
+                                  </span>
                                 </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
-                                  onClick={() => void downloadStoredImage(image, index)}
+                                  className="h-6 w-6 rounded-full border-stone-200 bg-white px-0 text-[9px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
+                                  onClick={() =>
+                                    void downloadStoredImage(
+                                      image,
+                                      `turn-${turnIndex + 1}-image-${
+                                        index + 1
+                                      }.png`,
+                                    )
+                                  }
                                   aria-label="下载"
                                 >
-                                  <Download className="size-3 sm:size-4" />
+                                  <Download className="size-3" />
                                   <span className="hidden sm:inline">下载</span>
                                 </Button>
                               </div>
@@ -316,61 +586,73 @@ export function ImageResults({
                       }
 
                       if (image.status === "error") {
-                        const isTimeoutError = image.error?.includes("超时") && image.taskId;
+                        const isTimeoutError =
+                          image.error?.includes("超时") && image.taskId;
                         return (
                           <div key={image.id} className="break-inside-avoid">
                             <div
                               className={cn(
-                                "overflow-hidden rounded-xl border border-rose-200 bg-rose-50",
-                                "aspect-square",
-                                turn.ratio === "1:1" && "sm:aspect-square",
-                                turn.ratio === "16:9" && "sm:aspect-video",
-                                turn.ratio === "9:16" && "sm:aspect-[9/16]",
-                                turn.ratio === "4:3" && "sm:aspect-[4/3]",
-                                turn.ratio === "3:4" && "sm:aspect-[3/4]",
+                                "overflow-hidden rounded-lg border border-rose-200 bg-rose-50 sm:rounded-xl",
+                                getTurnAspectClass(turn.ratio),
                               )}
                             >
-                            <div className="flex h-full min-h-16 flex-col items-center justify-center gap-1.5 px-2 py-2 text-center text-[11px] leading-4 text-rose-600 sm:gap-3 sm:px-6 sm:py-8 sm:text-sm sm:leading-6">
-                              <p className="font-medium">图片 {index + 1}/{turn.images.length}</p>
-                              <span className="line-clamp-2 sm:line-clamp-none">{image.error || "生成失败"}</span>
-                              <div className="flex items-center gap-2">
-                                {isTimeoutError && (
+                              <div className="flex h-full min-h-16 flex-col items-center justify-center gap-1 px-2 py-2 text-center text-[10px] leading-4 text-rose-600 sm:gap-3 sm:px-6 sm:py-8 sm:text-sm sm:leading-6">
+                                <p className="font-medium">
+                                  图片 {index + 1}/{turn.images.length}
+                                </p>
+                                <span className="line-clamp-2 sm:line-clamp-none">
+                                  {image.error || "生成失败"}
+                                </span>
+                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                  {isTimeoutError && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void onTimeoutRetryContinue(
+                                          image.taskId!,
+                                        )
+                                      }
+                                      className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-600 shadow-sm transition hover:bg-emerald-200 sm:px-3 sm:text-xs"
+                                    >
+                                      继续等待
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
-                                    onClick={() => void onTimeoutRetryContinue(image.taskId!)}
-                                    className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-medium text-emerald-600 shadow-sm transition hover:bg-emerald-200 sm:px-3 sm:text-xs"
+                                    onClick={() =>
+                                      void onRetryImage(
+                                        selectedConversation.id,
+                                        turn.id,
+                                        image.id,
+                                      )
+                                    }
+                                    className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-rose-600 shadow-sm transition hover:bg-rose-100 sm:px-3 sm:text-xs"
                                   >
-                                    继续等待
+                                    重新生成这一张
                                   </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => void onRetryImage(selectedConversation.id, turn.id, image.id)}
-                                  className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-rose-600 shadow-sm transition hover:bg-rose-100 sm:px-3 sm:text-xs"
-                                >
-                                  重新生成这一张
-                                </button>
+                                </div>
                               </div>
                             </div>
-                            </div>
-                            <div className="flex flex-col gap-1 px-0.5 py-1 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-3 sm:text-xs">
-                              <div className="min-w-0 text-stone-500">
-                                <span>结果 {index + 1}</span>
-                                {image.durationMs != null ? <span className="text-stone-400 sm:ml-2">{formatDuration(image.durationMs)}</span> : null}
-                                <span className="block text-transparent">-</span>
-                              </div>
-                            </div>
+                            <div className="hidden sm:block" />
                           </div>
                         );
                       }
 
-                      const imageTaskStatus = image.taskStatus || (turn.status === "queued" ? "queued" : "running");
-                      const imageStatusLabel = imageTaskStatus === "queued" ? "排队中" : getProgressLabel(image.progress);
-                      const showElapsed = imageTaskStatus === "running" && image.elapsedSecs != null;
+                      const imageTaskStatus =
+                        image.taskStatus ||
+                        (turn.status === "queued" ? "queued" : "running");
+                      const imageStatusLabel =
+                        imageTaskStatus === "queued"
+                          ? "排队中"
+                          : getProgressLabel(image.progress);
+                      const showElapsed =
+                        imageTaskStatus === "running" &&
+                        image.elapsedSecs != null;
                       const elapsedDisplay = showElapsed
                         ? formatElapsed(
                             image.elapsedUpdatedAt != null
-                              ? image.elapsedSecs! + (currentTime - image.elapsedUpdatedAt!) / 1000
+                              ? image.elapsedSecs! +
+                                  (currentTime - image.elapsedUpdatedAt!) / 1000
                               : image.elapsedSecs!,
                           )
                         : null;
@@ -378,32 +660,48 @@ export function ImageResults({
                         <div key={image.id} className="break-inside-avoid">
                           <div
                             className={cn(
-                              "overflow-hidden rounded-xl border border-stone-200/80 bg-stone-100/80 relative",
-                              turn.ratio === "1:1" && "aspect-square",
-                              turn.ratio === "16:9" && "aspect-video",
-                              turn.ratio === "9:16" && "aspect-[9/16]",
-                              turn.ratio === "4:3" && "aspect-[4/3]",
-                              turn.ratio === "3:4" && "aspect-[3/4]",
+                              "relative overflow-hidden rounded-lg border border-stone-200/80 bg-stone-100/80 sm:rounded-xl",
+                              getTurnAspectClass(turn.ratio),
                             )}
                           >
-                          <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2 py-3 text-center text-stone-500 sm:gap-3 sm:px-6 sm:py-8">
-                            <div className="rounded-full bg-white p-2 shadow-sm sm:p-3">
-                              {imageTaskStatus === "queued" ? (
-                                <Clock3 className="size-4 sm:size-5" />
-                              ) : (
-                                <LoaderCircle className="size-4 animate-spin sm:size-5" />
-                              )}
+                            <div className="flex h-full flex-col items-center justify-center gap-1 px-2 py-2 text-center text-stone-500 sm:gap-3 sm:px-6 sm:py-8">
+                              <div className="rounded-full bg-white p-1.5 shadow-sm sm:p-3">
+                                {imageTaskStatus === "queued" ? (
+                                  <Clock3 className="size-4 sm:size-5" />
+                                ) : (
+                                  <LoaderCircle className="size-4 animate-spin sm:size-5" />
+                                )}
+                              </div>
+                              <p className="text-[9px] font-medium leading-4 sm:text-sm">
+                                图片 {index + 1}/{turn.images.length}
+                              </p>
+                              <p className="text-[8px] leading-4 text-stone-400 sm:text-xs">
+                                {imageStatusLabel}
+                              </p>
+                              {image.taskId ? (
+                                <button
+                                  type="button"
+                                  disabled={isCancellingTask?.(image.taskId) ?? false}
+                                  onClick={() =>
+                                    void onCancelImage(
+                                      selectedConversation.id,
+                                      image.taskId!,
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[8px] font-medium text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-3 sm:text-[10px]"
+                                >
+                                  <SquareStop className="size-3" />
+                                  {isCancellingTask?.(image.taskId) ?? false
+                                    ? "停止中"
+                                    : "停止"}
+                                </button>
+                              ) : null}
                             </div>
-                            <p className="text-[11px] font-medium leading-4 sm:text-sm">
-                              图片 {index + 1}/{turn.images.length}
-                            </p>
-                            <p className="text-[10px] leading-4 text-stone-400 sm:text-xs">
-                              {imageStatusLabel}
-                            </p>
-                          </div>
                           </div>
                           {elapsedDisplay != null && (
-                            <div className="px-0.5 py-1 text-[10px] text-stone-400 sm:px-3 sm:py-3 sm:text-xs">{elapsedDisplay}</div>
+                            <div className="hidden px-0.5 py-1 text-[9px] text-stone-400 sm:block sm:px-3 sm:py-3 sm:text-xs">
+                              {elapsedDisplay}
+                            </div>
                           )}
                         </div>
                       );
@@ -411,12 +709,16 @@ export function ImageResults({
                   </div>
 
                   {turn.status === "error" && turn.error ? (
-                    <div className="mt-4 flex items-center justify-between border-l-2 border-amber-300 bg-amber-50/70 px-4 py-3 text-sm leading-6 text-amber-700">
-                      <span>{turn.error}</span>
+                    <div className="mt-2.5 flex flex-col gap-1.5 border-l-2 border-amber-300 bg-amber-50/70 px-3 py-2.5 text-sm leading-6 text-amber-700 sm:mt-4 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3">
+                      <span className="text-[11px] sm:text-sm">
+                        {turn.error}
+                      </span>
                       <button
                         type="button"
-                        onClick={() => void onDismissErrors(selectedConversation.id, turn.id)}
-                        className="ml-3 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700 transition hover:bg-amber-200 hover:text-amber-900"
+                        onClick={() =>
+                          void onDismissErrors(selectedConversation.id, turn.id)
+                        }
+                        className="inline-flex shrink-0 items-center gap-1 self-start rounded-full bg-amber-100 px-2 py-0.5 text-[8px] font-medium text-amber-700 transition hover:bg-amber-200 hover:text-amber-900 sm:ml-3 sm:text-[10px]"
                       >
                         <EyeOff className="size-3" />
                         忽略错误
@@ -424,19 +726,69 @@ export function ImageResults({
                     </div>
                   ) : null}
 
-                  <div className="mt-3 flex items-center gap-1.5 text-[11px] sm:mt-4">
+                  <div className="mt-2 flex items-center gap-1 text-[8px] sm:mt-4 sm:gap-1.5 sm:text-[11px]">
+                    {downloadableTurnImages.length > 0 ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 rounded-full border-stone-200 bg-white px-2 text-[8px] text-stone-600 hover:bg-stone-50 sm:h-8 sm:px-3 sm:text-xs"
+                        disabled={isDownloadingTurn}
+                        onClick={async () => {
+                          if (isDownloadingTurn) {
+                            return;
+                          }
+                          setDownloadingTurnId(turn.id);
+                          try {
+                            const result = await downloadImageBatch(
+                              downloadableTurnImages,
+                              `turn-${turnIndex + 1}-images`,
+                            );
+                            if (result.failedCount > 0) {
+                              toast.warning(
+                                `已打包 ${result.downloadedCount} 张，${result.failedCount} 张失败`,
+                              );
+                            } else {
+                              toast.success(
+                                `已开始下载 ${result.downloadedCount} 张图片`,
+                              );
+                            }
+                          } catch (error) {
+                            const message =
+                              error instanceof Error
+                                ? error.message
+                                : "批量下载失败";
+                            toast.error(message);
+                          } finally {
+                            setDownloadingTurnId(null);
+                          }
+                        }}
+                      >
+                        {isDownloadingTurn ? (
+                          <LoaderCircle className="size-3 animate-spin" />
+                        ) : (
+                          <Download className="size-3" />
+                        )}
+                        <span className="hidden sm:inline">
+                          {isDownloadingTurn ? "打包中" : "批量下载"}
+                        </span>
+                      </Button>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={() => void onRegenerateTurn(selectedConversation.id, turn.id)}
-                      className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 font-medium text-stone-500 transition hover:bg-stone-200 hover:text-stone-900"
+                      onClick={() =>
+                        void onRegenerateTurn(selectedConversation.id, turn.id)
+                      }
+                      className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-[2px] text-[8px] font-medium text-stone-500 transition hover:bg-stone-200 hover:text-stone-900 sm:text-[10px]"
                     >
                       <RotateCcw className="size-3" />
                       全部重新生成
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDeleteResults(selectedConversation.id, turn.id)}
-                      className="inline-flex size-6 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
+                      onClick={() =>
+                        onDeleteResults(selectedConversation.id, turn.id)
+                      }
+                      className="inline-flex size-5 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
                       aria-label="删除生成结果"
                     >
                       <Trash2 className="size-3" />
@@ -497,7 +849,11 @@ function formatBase64ImageSize(base64: string) {
   let cached = base64SizeCache.get(base64);
   if (cached !== undefined) return cached;
   const normalized = base64.replace(/\s/g, "");
-  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  const padding = normalized.endsWith("==")
+    ? 2
+    : normalized.endsWith("=")
+      ? 1
+      : 0;
   const bytes = Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
 
   if (bytes >= 1024 * 1024) {
@@ -515,7 +871,22 @@ function formatImageDimensions(width: number, height: number) {
   return `${width} x ${height}`;
 }
 
-const LazyImage = memo(function LazyImage({ src, fullSrc, alt, className, onLoad, onOpen }: {
+function getTurnAspectClass(ratio?: string) {
+  if (ratio === "16:9") return "aspect-video";
+  if (ratio === "9:16") return "aspect-[9/16]";
+  if (ratio === "4:3") return "aspect-[4/3]";
+  if (ratio === "3:4") return "aspect-[3/4]";
+  return "aspect-square";
+}
+
+const LazyImage = memo(function LazyImage({
+  src,
+  fullSrc,
+  alt,
+  className,
+  onLoad,
+  onOpen,
+}: {
   src: string;
   fullSrc?: string;
   alt: string;
@@ -546,11 +917,7 @@ const LazyImage = memo(function LazyImage({ src, fullSrc, alt, className, onLoad
   return (
     <div ref={imgRef} className="relative">
       {isVisible ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          className={className}
-        >
+        <button type="button" onClick={onOpen} className={className}>
           <img
             src={src}
             alt={alt}
@@ -569,7 +936,9 @@ const LazyImage = memo(function LazyImage({ src, fullSrc, alt, className, onLoad
           />
         </button>
       ) : (
-        <div className={`animate-pulse rounded-xl bg-stone-100 min-h-[200px] sm:min-h-[280px] ${className}`} />
+        <div
+          className={`animate-pulse rounded-xl bg-stone-100 min-h-[128px] sm:min-h-[280px] ${className}`}
+        />
       )}
     </div>
   );

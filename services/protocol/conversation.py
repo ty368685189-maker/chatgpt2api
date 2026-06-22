@@ -97,6 +97,29 @@ def public_image_error_message(message: str) -> str:
     return text or "The image generation request failed. Please try again later."
 
 
+class ImageTaskCancelledError(RuntimeError):
+    pass
+
+
+def _check_cancelled(request: ConversationRequest) -> None:
+    if request.cancel_event and request.cancel_event.is_set():
+        raise ImageTaskCancelledError("image task cancelled")
+
+
+def _sleep_with_cancel(request: ConversationRequest, seconds: float) -> None:
+    remaining = max(0.0, float(seconds))
+    if remaining <= 0:
+        _check_cancelled(request)
+        return
+    deadline = time.time() + remaining
+    while True:
+        _check_cancelled(request)
+        wait_for = min(0.5, max(0.0, deadline - time.time()))
+        if wait_for <= 0:
+            return
+        time.sleep(wait_for)
+
+
 def is_token_invalid_error(message: str) -> bool:
     text = str(message or "").lower()
     return (
@@ -337,6 +360,7 @@ class ConversationRequest:
     message_as_error: bool = False
     progress_callback: Any = None  # Callable[[str], None] | None
     user_id: str | None = None
+    cancel_event: threading.Event | None = None
 
 
 @dataclass
@@ -641,6 +665,10 @@ def conversation_base_event(event_type: str, state: ConversationState, **extra: 
     }
 
 
+def should_poll_image_result(request: ConversationRequest, last_event: dict[str, Any]) -> bool:
+    return bool(request.images) or last_event.get("turn_use_case") == "image gen" or last_event.get("tool_invoked") is True
+
+
 def iter_conversation_payloads(payloads: Iterator[str], history_text: str = "",
                                history_messages: list[str] | None = None) -> Iterator[dict[str, Any]]:
     state = ConversationState()
@@ -853,8 +881,8 @@ def stream_image_outputs(
         error_text = detailed_error or message or "Image generation was rejected by upstream policy."
         yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=error_text, conversation_id=conversation_id)
         return
-    should_poll_for_image = bool(request.images) or last.get("turn_use_case") == "image gen"
-    if message and not file_ids and not sediment_ids and not should_poll_for_image:
+    poll_for_image = should_poll_image_result(request, last)
+    if message and not file_ids and not sediment_ids and not poll_for_image:
         yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=message, conversation_id=conversation_id)
         return
 
@@ -900,7 +928,7 @@ def stream_image_outputs(
     detailed_error = ""
     if not file_ids and not sediment_ids and conversation_id:
         detailed_error = _get_detailed_error_from_tasks(backend, conversation_id, timeout_secs=5.0, wait_secs=1.0)
-        if detailed_error and not should_poll_for_image and not is_text_reply:
+        if detailed_error and not poll_for_image and not is_text_reply:
             logger.info({
                 "event": "image_task_error_before_poll",
                 "conversation_id": conversation_id,
@@ -908,7 +936,7 @@ def stream_image_outputs(
             })
             yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=detailed_error, conversation_id=conversation_id)
             return
-        if detailed_error and (should_poll_for_image or is_text_reply):
+        if detailed_error and (poll_for_image or is_text_reply):
             logger.info({
                 "event": "image_task_error_skipped_for_poll",
                 "conversation_id": conversation_id,
@@ -930,7 +958,11 @@ def stream_image_outputs(
 
     try:
         image_urls = backend.resolve_conversation_image_urls(
-            conversation_id, file_ids, sediment_ids, poll_timeout_secs=poll_timeout,
+            conversation_id,
+            file_ids,
+            sediment_ids,
+            poll_timeout_secs=poll_timeout,
+            cancel_event=request.cancel_event,
         )
     except (ImageContentPolicyError, ImagePollTimeoutError) as exc:
         # 当检测到文本回复时，task error 不应直接判定为内容策略违规，
@@ -1010,6 +1042,7 @@ def stream_image_outputs(
             MAX_POLL_RETRIES = 3
             for poll_attempt in range(1, MAX_POLL_RETRIES + 1):
                 try:
+                    _check_cancelled(request)
                     polled_file_ids, polled_sediment_ids = backend._poll_image_results(
                         conversation_id,
                         retry_poll_timeout,
@@ -1045,7 +1078,7 @@ def stream_image_outputs(
                             "poll_attempt": poll_attempt,
                             "backoff_secs": backoff,
                         })
-                        time.sleep(backoff)
+                        _sleep_with_cancel(request, backoff)
                         continue
                     # 超时错误或重试次数用尽，停止重试
                     break
@@ -1087,10 +1120,10 @@ def stream_image_outputs(
         "conversation_id": conversation_id,
         "file_ids": file_ids,
         "sediment_ids": sediment_ids,
-        "should_poll_for_image": should_poll_for_image,
+        "should_poll_for_image": poll_for_image,
     })
     # 当 should_poll_for_image 为 True 但 conversation_id 丢失时，尝试恢复
-    if should_poll_for_image and not conversation_id:
+    if poll_for_image and not conversation_id:
         try:
             import time as _time
             recovered_id = backend.find_conversation_by_prompt(
@@ -1107,7 +1140,7 @@ def stream_image_outputs(
                 "event": "image_fallback_conversation_id_recovery_failed",
                 "error": repr(exc)[:300],
             })
-    if should_poll_for_image and conversation_id:
+    if poll_for_image and conversation_id:
         # 图片可能仍在异步处理中（上游 SSE 流在图片生成完成前就结束了）。
         # 使用 300s 超时并允许多次重试，避免因临时网络问题或图片尚未提交而提前退出。
         retry_poll_timeout = max(config.image_poll_timeout_secs, 300)
@@ -1120,13 +1153,15 @@ def stream_image_outputs(
                 "retry_wait_secs": retry_wait_secs,
                 "poll_attempt": poll_attempt,
             })
-            time.sleep(retry_wait_secs)
+            _sleep_with_cancel(request, retry_wait_secs)
             try:
+                _check_cancelled(request)
                 polled_file_ids, polled_sediment_ids = backend._poll_image_results(
                     conversation_id,
                     retry_poll_timeout,
                     file_ids,
                     sediment_ids,
+                    cancel_event=request.cancel_event,
                 )
                 file_ids.extend(item for item in polled_file_ids if item and item not in file_ids)
                 sediment_ids.extend(item for item in polled_sediment_ids if item and item not in sediment_ids)
@@ -1157,14 +1192,18 @@ def stream_image_outputs(
                         "poll_attempt": poll_attempt,
                         "backoff_secs": backoff,
                     })
-                    time.sleep(backoff)
+                    _sleep_with_cancel(request, backoff)
                     continue
                 # 超时错误或重试次数用尽，停止重试
                 break
         
         if file_ids or sediment_ids:
             image_urls = backend.resolve_conversation_image_urls(
-                conversation_id, file_ids, sediment_ids, poll=False,
+                conversation_id,
+                file_ids,
+                sediment_ids,
+                poll=False,
+                cancel_event=request.cancel_event,
             )
             if image_urls:
                 if request.progress_callback:
@@ -1276,6 +1315,7 @@ def _generate_single_image(
 
     while True:
         try:
+            _check_cancelled(request)
             if request.progress_callback:
                 request.progress_callback("getting_account")
             plan_type, _ = split_image_model(request.model)
@@ -1310,6 +1350,7 @@ def _generate_single_image(
                 stream_fn = stream_codex_image_outputs if is_codex_image_model(request.model) else stream_image_outputs
                 outputs: list[ImageOutput] = []
                 for output in stream_fn(backend, request, index, total):
+                    _check_cancelled(request)
                     if account_email and not output.account_email:
                         output.account_email = account_email
                     if output.kind == "message" and request.message_as_error:
@@ -1482,7 +1523,7 @@ def _generate_single_image(
                         "index": index,
                         "error": last_error[:200],
                     })
-                    time.sleep(min(2.0 * tls_retry_count, 10.0))
+                    _sleep_with_cancel(request, min(2.0 * tls_retry_count, 10.0))
                     continue
             # 连接超时错误（curl 28）：同账号短等待重试，不切换账号
             if not emitted_for_token and is_connection_timeout_error(last_error):
@@ -1498,7 +1539,7 @@ def _generate_single_image(
                         "wait_secs": wait_secs,
                         "error": last_error[:200],
                     })
-                    time.sleep(wait_secs)
+                    _sleep_with_cancel(request, wait_secs)
                     continue
             
             # 换账号重试
@@ -1522,6 +1563,7 @@ def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[Ima
     user_id = request.user_id or ""
     user_concurrency_limiter.acquire(user_id)
     try:
+        _check_cancelled(request)
         if not is_supported_image_model(request.model):
             raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(sorted(IMAGE_MODELS)))
 
@@ -1540,8 +1582,10 @@ def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[Ima
                 "model": request.model,
             })
             for index in range(1, request.n + 1):
+                _check_cancelled(request)
                 outputs = _generate_single_image(request, index, request.n)
                 for output in outputs:
+                    _check_cancelled(request)
                     yield output
             return
 
@@ -1561,6 +1605,7 @@ def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[Ima
 
             # 按完成顺序收集结果
             for future in as_completed(futures):
+                _check_cancelled(request)
                 index = futures[future]
                 try:
                     results[index] = future.result()

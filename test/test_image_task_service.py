@@ -4,6 +4,8 @@ import json
 import tempfile
 import time
 import unittest
+import threading
+from unittest.mock import patch
 from pathlib import Path
 
 from services.image_task_service import ImageTaskService
@@ -23,6 +25,16 @@ def wait_for_task(service: ImageTaskService, identity: dict[str, object], task_i
             return last
         time.sleep(0.02)
     raise AssertionError(f"task {task_id} did not reach {status}, last={last}")
+
+
+def wait_for_thread_finish(prefix: str, timeout: float = 2.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        threads = [thread for thread in threading.enumerate() if thread.name.startswith(prefix)]
+        if not threads:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"thread {prefix} did not finish in time")
 
 
 class ImageTaskServiceTests(unittest.TestCase):
@@ -143,6 +155,54 @@ class ImageTaskServiceTests(unittest.TestCase):
 
             self.assertEqual([item["status"] for item in result["items"]], ["error", "error"])
             self.assertTrue(all("已中断" in item.get("error", "") for item in result["items"]))
+
+    def test_resume_poll_timeout_appends_continue_waiting_hint(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "image_tasks.json"
+            service = self.make_service(
+                path,
+                handler=lambda _payload: {"data": [{"url": "http://example.test/image.png"}]},
+            )
+            task_key = "owner-1:timeout-task"
+            service._tasks[task_key] = {
+                "id": "timeout-task",
+                "owner_id": "owner-1",
+                "status": "error",
+                "mode": "generate",
+                "model": "gpt-image-2",
+                "size": "",
+                "quality": "auto",
+                "created_at": "2099-01-01 00:00:00",
+                "updated_at": "2099-01-01 00:00:00",
+                "error": "图片轮询超时",
+                "conversation_id": "conv-1",
+            }
+            service._save_locked()
+
+            class FakeBackend:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    return False
+
+                def _poll_image_results(self, conversation_id, extra_timeout_secs):
+                    return [], []
+
+                def resolve_conversation_image_urls(self, conversation_id, file_ids, sediment_ids, poll=False):
+                    return []
+
+                def download_image_bytes(self, image_urls):
+                    return []
+
+            with patch("services.openai_backend_api.OpenAIBackendAPI", return_value=FakeBackend()):
+                result = service.resume_poll(OWNER, "timeout-task", extra_timeout_secs=0.01)
+
+            self.assertEqual(result["status"], "running")
+            wait_for_thread_finish("image-resume-timeout-task")
+            item = wait_for_task(service, OWNER, "timeout-task", "error")
+            self.assertIn("轮询超时", item["error"])
+            self.assertIn("继续等待", item["error"])
 
 
 if __name__ == "__main__":
