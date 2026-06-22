@@ -294,6 +294,18 @@ function taskDataToStoredImage(
     };
   }
 
+  if (task.status === "cancelled") {
+    return {
+      ...image,
+      taskId: task.id,
+      status: "cancelled",
+      taskStatus: undefined,
+      progress: undefined,
+      error: task.error || "任务已取消",
+      durationMs: task.duration_ms,
+    };
+  }
+
   const newTaskStatus =
     task.status === "queued"
       ? "queued"
@@ -347,7 +359,7 @@ function deriveTurnStatus(
     (image) => image.status === "loading",
   ).length;
   const failedCount = turn.images.filter(
-    (image) => image.status === "error",
+    (image) => image.status === "error" || image.status === "cancelled",
   ).length;
   const successCount = turn.images.filter(
     (image) => image.status === "success",
