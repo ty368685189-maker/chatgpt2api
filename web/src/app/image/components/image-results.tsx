@@ -216,7 +216,7 @@ async function buildZipBlob(
     createZipBytePart(0, 2),
   );
 
-  return new Blob([...localChunks, centralDirectory, endOfCentralDirectory], {
+  return new Blob([...localChunks, centralDirectory, endOfCentralDirectory] as BlobPart[], {
     type: "application/zip",
   });
 }
