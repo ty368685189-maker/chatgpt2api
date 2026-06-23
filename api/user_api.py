@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field

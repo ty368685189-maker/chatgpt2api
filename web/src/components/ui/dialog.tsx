@@ -61,8 +61,8 @@ function DialogContent({
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-full p-1 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
-            <X className="size-4" />
+          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-3 right-3 sm:top-4 sm:right-4 rounded-full p-2 opacity-100 sm:opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none bg-stone-100/50 sm:bg-transparent dark:bg-stone-800/50 sm:dark:bg-transparent">
+            <X className="size-5 sm:size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         ) : null}

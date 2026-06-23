@@ -60,8 +60,8 @@ def create_router() -> APIRouter:
         except PermissionError as exc:
             raise HTTPException(status_code=429, detail={"error": str(exc)})
 
-        await filter_or_log(LoggedCall(identity, "/api/image-tasks/generations", body.model, "文生图任务", request_text=body.prompt), body.prompt)
         try:
+            await filter_or_log(LoggedCall(identity, "/api/image-tasks/generations", body.model, "文生图任务", request_text=body.prompt), body.prompt)
             return await run_in_threadpool(
                 image_task_service.submit_generation,
                 identity,
@@ -73,7 +73,11 @@ def create_router() -> APIRouter:
                 base_url=resolve_image_base_url(request),
             )
         except ValueError as exc:
+            user_service.refund_quota(identity["id"])
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        except BaseException:
+            user_service.refund_quota(identity["id"])
+            raise
 
     @router.post("/api/image-tasks/edits")
     async def create_edit_task(
@@ -94,10 +98,10 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=400, detail={"error": "client_task_id is required"})
         prompt = str(payload["prompt"])
         model = str(payload["model"])
-        await filter_or_log(LoggedCall(identity, "/api/image-tasks/edits", model, "图生图任务", request_text=prompt), prompt)
-        images = await read_image_sources(image_sources)
-        masks = await read_image_sources(mask_sources) if mask_sources else None
         try:
+            await filter_or_log(LoggedCall(identity, "/api/image-tasks/edits", model, "图生图任务", request_text=prompt), prompt)
+            images = await read_image_sources(image_sources)
+            masks = await read_image_sources(mask_sources) if mask_sources else None
             return await run_in_threadpool(
                 image_task_service.submit_edit,
                 identity,
@@ -111,7 +115,11 @@ def create_router() -> APIRouter:
                 masks=masks,
             )
         except ValueError as exc:
+            user_service.refund_quota(identity["id"])
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        except BaseException:
+            user_service.refund_quota(identity["id"])
+            raise
 
     @router.post("/api/image-tasks/{task_id}/resume-poll")
     async def resume_image_poll(

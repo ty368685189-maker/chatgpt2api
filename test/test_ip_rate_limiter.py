@@ -1,5 +1,4 @@
 import time
-import pytest
 from api.user_api import IPRateLimiter
 
 def test_ip_rate_limiter_allows_under_limit():

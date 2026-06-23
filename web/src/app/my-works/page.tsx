@@ -12,15 +12,20 @@ import {
   Lock,
   Globe,
   Calendar,
-  Grid
+  Grid,
+  CheckSquare
 } from "lucide-react";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { fetchUserWorks, deleteUserWork, shareUserWork, type WorkItem } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import webConfig from "@/constants/common-env";
 import { ImageThumbnail } from "@/components/image-thumbnail";
 import {
@@ -29,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 
 const WorkSkeleton = () => (
-  <Card className="overflow-hidden rounded-2xl border-stone-200/60 bg-white/70 shadow-sm animate-pulse dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col">
+  <Card className="overflow-hidden rounded-xl border-stone-200/60 bg-white/70 shadow-sm animate-pulse dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col">
     <div className="relative aspect-square w-full bg-stone-250 dark:bg-stone-850" />
     <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-4">
       <div className="space-y-2.5">
@@ -62,6 +67,11 @@ export default function MyWorksPage() {
   const [offset, setOffset] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
+  // Batch Mode State
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const LIMIT = 12;
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -164,6 +174,65 @@ export default function MyWorksPage() {
     return `${baseUrl}${imagePath.startsWith("/") ? "" : "/"}${imagePath}`;
   };
 
+  const handleToggleSelection = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === works.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(works.map((w) => w.id)));
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedIds.size === 0) return;
+    setIsDownloading(true);
+    toast.info("正在打包下载，请稍候...");
+
+    try {
+      const zip = new JSZip();
+      const selectedWorks = works.filter((w) => selectedIds.has(w.id));
+      let counter = 0;
+
+      for (const work of selectedWorks) {
+        for (let i = 0; i < work.images.length; i++) {
+          const imgUrl = getFullImageUrl(work.images[i]);
+          if (!imgUrl) continue;
+
+          try {
+            const response = await fetch(imgUrl);
+            const blob = await response.blob();
+            const ext = blob.type === "image/png" ? "png" : blob.type === "image/jpeg" ? "jpg" : "webp";
+            const filename = `work_${work.id.substring(0, 8)}_${i + 1}.${ext}`;
+            zip.file(filename, blob);
+            counter++;
+          } catch (e) {
+            console.error("Failed to fetch image", imgUrl, e);
+          }
+        }
+      }
+
+      if (counter > 0) {
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        saveAs(zipBlob, `my_works_${Date.now()}.zip`);
+        toast.success(`成功下载 ${counter} 张图片！`);
+      } else {
+        toast.error("没有可下载的图片");
+      }
+    } catch (e) {
+      toast.error("打包下载失败");
+    } finally {
+      setIsDownloading(false);
+      setIsBatchMode(false);
+      setSelectedIds(new Set());
+    }
+  };
+
   if (isCheckingAuth || !session) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -183,13 +252,60 @@ export default function MyWorksPage() {
             查看您在云端生成的所有图片记录。您可将满意的画作一键共享至公共画廊，或者直接下载。
           </p>
         </div>
-        <Button 
-          onClick={() => router.push("/image")} 
-          className="w-full md:w-auto rounded-xl bg-stone-950 text-white hover:bg-stone-850 dark:bg-white dark:text-stone-950 dark:hover:bg-stone-200"
-        >
-          <Sparkles className="size-4 mr-2" />
-          去画图
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isBatchMode ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleSelectAll}
+                className="rounded-xl bg-white dark:bg-stone-900"
+              >
+                {selectedIds.size === works.length ? "取消全选" : "全选"}
+              </Button>
+              <Button
+                variant="default"
+                onClick={() => void handleBulkDownload()}
+                disabled={selectedIds.size === 0 || isDownloading}
+                className="rounded-xl bg-stone-950 text-white hover:bg-stone-800"
+              >
+                {isDownloading ? (
+                  <LoaderCircle className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="size-4 mr-2" />
+                )}
+                下载已选 ({selectedIds.size})
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setIsBatchMode(false);
+                  setSelectedIds(new Set());
+                }}
+                className="rounded-xl"
+              >
+                退出批量
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setIsBatchMode(true)}
+                className="rounded-xl bg-white dark:bg-stone-900"
+              >
+                <CheckSquare className="size-4 mr-2" />
+                批量管理
+              </Button>
+              <Button 
+                onClick={() => router.push("/image")} 
+                className="w-full md:w-auto rounded-xl bg-stone-950 text-white hover:bg-stone-850 dark:bg-white dark:text-stone-950 dark:hover:bg-stone-200"
+              >
+                <Sparkles className="size-4 mr-2" />
+                去画图
+              </Button>
+            </>
+          )}
+        </div>
       </section>
 
       {isLoading ? (
@@ -199,8 +315,8 @@ export default function MyWorksPage() {
           ))}
         </div>
       ) : works.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed rounded-2xl">
-          <div className="rounded-2xl bg-stone-50 p-4 dark:bg-stone-800/40 text-stone-400 dark:text-stone-500 mb-4">
+        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed rounded-xl">
+          <div className="rounded-xl bg-stone-50 p-4 dark:bg-stone-800/40 text-stone-400 dark:text-stone-500 mb-4">
             <Grid className="size-8" />
           </div>
           <h3 className="text-lg font-semibold text-stone-800 dark:text-stone-200">暂无作品记录</h3>
@@ -225,13 +341,33 @@ export default function MyWorksPage() {
               return (
                 <Card 
                   key={work.id} 
-                  className="overflow-hidden rounded-2xl border-white/60 bg-white/70 shadow-sm transition-all duration-300 hover:shadow-md dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col group"
+                  className={cn(
+                    "overflow-hidden rounded-xl border-white/60 bg-white/70 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col group",
+                    isBatchMode && selectedIds.has(work.id) ? "ring-2 ring-stone-950 dark:ring-white" : ""
+                  )}
                 >
-                  <div className="relative aspect-square w-full overflow-hidden bg-stone-100 dark:bg-stone-950 cursor-pointer" onClick={() => firstImg && setPreviewImage(firstImg)}>
+                  <div 
+                    className="relative aspect-square w-full overflow-hidden bg-stone-100 dark:bg-stone-950 cursor-pointer" 
+                    onClick={() => {
+                      if (isBatchMode) {
+                        handleToggleSelection(work.id);
+                      } else if (firstImg) {
+                        setPreviewImage(firstImg);
+                      }
+                    }}
+                  >
+                    {isBatchMode && (
+                      <div className="absolute left-2 top-2 z-10 flex size-7 items-center justify-center rounded-md bg-white/80 backdrop-blur shadow-sm dark:bg-stone-900/80">
+                        <Checkbox 
+                          checked={selectedIds.has(work.id)} 
+                          onCheckedChange={() => handleToggleSelection(work.id)} 
+                        />
+                      </div>
+                    )}
                     {firstImg ? (
                       <ImageThumbnail 
                         src={firstImg} 
-                        alt={work.prompt} 
+                        alt="作品图片" 
                         className="h-full w-full"
                         imageClassName="transition-transform duration-500 group-hover:scale-105"
                       />

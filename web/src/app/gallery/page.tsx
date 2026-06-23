@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 
 const WorkSkeleton = () => (
-  <Card className="overflow-hidden rounded-2xl border-stone-200/60 bg-white/70 shadow-sm animate-pulse dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col">
+  <Card className="overflow-hidden rounded-xl border-stone-200/60 bg-white shadow-sm animate-pulse dark:border-stone-800/50 dark:bg-stone-900 flex flex-col">
     <div className="relative aspect-square w-full bg-stone-250 dark:bg-stone-850" />
     <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-4">
       <div className="space-y-2.5">
@@ -197,8 +197,8 @@ export default function GalleryPage() {
           ))}
         </div>
       ) : works.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed rounded-2xl">
-          <div className="rounded-2xl bg-stone-50 p-4 dark:bg-stone-850 text-stone-400 dark:text-stone-500 mb-4">
+        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed rounded-xl border-stone-200 dark:border-stone-800">
+          <div className="rounded-xl bg-stone-50 p-4 dark:bg-stone-900 text-stone-400 dark:text-stone-500 mb-4">
             <Grid className="size-8" />
           </div>
           <h3 className="text-lg font-semibold text-stone-800 dark:text-stone-200">未找到相关画作</h3>
@@ -215,13 +215,13 @@ export default function GalleryPage() {
               return (
                 <Card 
                   key={work.id} 
-                  className="overflow-hidden rounded-2xl border-white/60 bg-white/70 shadow-sm transition-all duration-300 hover:shadow-md dark:border-stone-800/50 dark:bg-stone-900/60 flex flex-col group"
+                  className="overflow-hidden rounded-xl border-stone-200/60 bg-white shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-1 dark:border-stone-800/60 dark:bg-stone-900 flex flex-col group"
                 >
                   <div className="relative aspect-square w-full overflow-hidden bg-stone-100 dark:bg-stone-950 cursor-pointer" onClick={() => firstImg && setPreviewImage(firstImg)}>
                     {firstImg ? (
                       <ImageThumbnail 
                         src={firstImg} 
-                        alt={work.prompt} 
+                        alt="作品图片" 
                         className="h-full w-full"
                         imageClassName="transition-transform duration-500 group-hover:scale-105"
                       />

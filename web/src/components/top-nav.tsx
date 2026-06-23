@@ -152,9 +152,9 @@ export function TopNav() {
     <>
       <header className="sticky top-0 z-50 w-full border-b border-stone-200/70 bg-white/85 backdrop-blur-xl dark:border-white/10 dark:bg-stone-950/70">
         <div className="flex min-h-12 items-center gap-2 px-3 py-2.5 sm:min-h-14 sm:gap-3 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 items-center gap-2 xl:gap-3">
+          <div className="flex flex-1 min-w-0 items-center gap-2 xl:gap-3">
             <Sheet>
-              <SheetTrigger className="inline-flex size-8 items-center justify-center rounded-full text-stone-700 transition hover:bg-stone-100 hover:text-stone-950 xl:hidden dark:text-stone-200 dark:hover:bg-white/10 dark:hover:text-white">
+              <SheetTrigger className="inline-flex size-8 items-center justify-center rounded-lg text-stone-700 transition hover:bg-stone-100 hover:text-stone-950 xl:hidden dark:text-stone-200 dark:hover:bg-white/10 dark:hover:text-white">
                 <Menu className="size-4" />
                 <span className="sr-only">打开导航</span>
               </SheetTrigger>
@@ -202,21 +202,21 @@ export function TopNav() {
             <div className="flex min-w-0 items-center gap-3">
               <Link
                 href="/image"
-                className="shrink-0 rounded-full border border-stone-200/70 bg-white/90 px-3 py-1 text-[14px] font-bold tracking-tight text-stone-950 transition hover:border-stone-300 hover:bg-white sm:px-3.5 sm:py-1.5 sm:text-[15px] dark:border-white/10 dark:bg-stone-900/70 dark:text-stone-50 dark:hover:border-white/20 dark:hover:bg-stone-900"
+                className="shrink-0 rounded-lg border border-stone-200/70 bg-white/90 px-3 py-1 text-[14px] font-bold tracking-tight text-stone-950 transition hover:border-stone-300 hover:bg-white sm:px-3.5 sm:py-1.5 sm:text-[15px] dark:border-white/10 dark:bg-stone-900/70 dark:text-stone-50 dark:hover:border-white/20 dark:hover:bg-stone-900"
               >
                 Dual公益站
               </Link>
-              <span className="hidden rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500 xl:inline-flex dark:bg-white/8 dark:text-stone-300">
+              <span className="hidden rounded-lg bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500 xl:inline-flex dark:bg-white/8 dark:text-stone-300">
                 图片 / 账号 / 设置
               </span>
             </div>
           </div>
-          <nav className="hide-scrollbar hidden min-w-0 flex-1 items-center justify-start gap-3 overflow-x-auto px-2 xl:flex 2xl:gap-7">
+          <nav className="hide-scrollbar hidden min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-2 xl:flex 2xl:gap-7">
             {canvasHref ? (
               <button
                 type="button"
                 onClick={handleCanvasOpen}
-                className="relative shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-[13px] font-medium text-stone-500 transition hover:text-stone-900 2xl:text-[15px] dark:text-stone-400 dark:hover:text-stone-100"
+                className="relative shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[13px] font-medium text-stone-500 transition hover:text-stone-900 2xl:text-[15px] dark:text-stone-400 dark:hover:text-stone-100"
               >
                 无限画布
               </button>
@@ -228,7 +228,7 @@ export function TopNav() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "relative shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-[13px] font-medium transition 2xl:text-[15px]",
+                    "relative shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[13px] font-medium transition 2xl:text-[15px]",
                     active
                       ? "bg-stone-950 text-white xl:bg-transparent xl:font-semibold xl:text-stone-950 dark:bg-white dark:text-stone-950 dark:xl:bg-transparent dark:xl:text-white"
                       : "text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100",
@@ -240,7 +240,7 @@ export function TopNav() {
               );
             })}
           </nav>
-          <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
+          <div className="flex flex-1 shrink-0 items-center justify-end gap-2">
             <HeaderActions className="xl:hidden" showGithubText={false} />
             <div className="hidden items-center justify-end gap-2 xl:flex xl:gap-3">
               <HeaderActions showGithubText={false} />

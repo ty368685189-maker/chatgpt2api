@@ -94,7 +94,27 @@ export type ImageConversationStats = {
 // 旧的静态实例已替换为 getImageConversationStorage() 动态函数（见文件顶部）
 
 const IMAGE_CONVERSATIONS_KEY = "items";
-let imageConversationWriteQueue: Promise<void> = Promise.resolve();
+
+class AsyncMutex {
+  private queue = Promise.resolve();
+
+  async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    let release: () => void;
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const current = this.queue;
+    this.queue = this.queue.then(() => next);
+
+    try {
+      await current;
+      return await operation();
+    } finally {
+      release!();
+    }
+  }
+}
+const writeMutex = new AsyncMutex();
 
 function normalizeStoredImage(image: StoredImage): StoredImage {
   const normalized = {
@@ -246,12 +266,7 @@ function pickLatestConversation(current: ImageConversation, next: ImageConversat
 }
 
 function queueImageConversationWrite<T>(operation: () => Promise<T>): Promise<T> {
-  const result = imageConversationWriteQueue.then(operation);
-  imageConversationWriteQueue = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
+  return writeMutex.runExclusive(operation);
 }
 
 async function readStoredImageConversations(): Promise<ImageConversation[]> {

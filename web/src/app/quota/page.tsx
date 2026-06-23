@@ -67,7 +67,7 @@ export default function QuotaPage() {
 
       <QuotaSummaryCard profile={profile} />
 
-      <Card className="rounded-[28px] border-stone-200/80 bg-stone-950 text-white shadow-[0_22px_70px_-36px_rgba(0,0,0,0.55)] dark:border-stone-800/80 dark:bg-stone-900 dark:text-white">
+      <Card className="rounded-xl border-stone-200/80 bg-stone-950 text-white shadow-[0_22px_70px_-36px_rgba(0,0,0,0.55)] dark:border-stone-800/80 dark:bg-stone-900 dark:text-white">
         <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="text-xs font-medium uppercase tracking-[0.2em] text-stone-400 dark:text-stone-400">还能再生成</div>

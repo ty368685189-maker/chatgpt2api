@@ -31,6 +31,16 @@ def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+
+def _maybe_refund_quota(key: str, old_status: str | None, new_status: str | None) -> None:
+    if new_status in {CANCELLED_STATUS, TASK_STATUS_ERROR} and old_status not in {CANCELLED_STATUS, TASK_STATUS_ERROR}:
+        try:
+            from services.user_service import user_service
+            user_id = key.split(":")[0]
+            user_service.refund_quota(user_id)
+        except Exception:
+            pass
+
 def _timestamp(value: object) -> float:
     if not isinstance(value, str) or not value.strip():
         return 0.0
@@ -289,9 +299,31 @@ class ImageTaskService:
         payload_with_progress = {**payload, "progress_callback": progress_callback, "cancel_event": cancel_event}
         try:
             handler = self.edit_handler if mode == "edit" else self.generation_handler
-            result = handler(payload_with_progress)
-            if not isinstance(result, dict):
-                raise RuntimeError("image task returned streaming result unexpectedly")
+            
+            # VIP 专属自愈通道：自动重试 3 次，无感对抗瞬时网络抖动或个别账号额度超限
+            max_retries = 3
+            result = None
+            last_exc = None
+            for attempt in range(max_retries):
+                if cancel_event.is_set():
+                    break
+                try:
+                    result = handler(payload_with_progress)
+                    if not isinstance(result, dict):
+                        raise RuntimeError("image task returned streaming result unexpectedly")
+                    break
+                except Exception as e:
+                    last_exc = e
+                    if cancel_event.is_set():
+                        break
+                    print(f"[image-task] 宇少专属自愈 - 尝试第 {attempt + 1} 次失败: {e}. 正在为您自动重试...")
+                    time.sleep(1.5)
+            
+            if result is None:
+                if last_exc:
+                    raise last_exc
+                else:
+                    raise RuntimeError("多次重试后仍然未生成成功")
             data = result.get("data")
             account_email = _clean(result.get("_account_email") or result.get("account_email"))
             if not isinstance(data, list) or not data:
@@ -410,16 +442,21 @@ class ImageTaskService:
             task = self._tasks.get(key)
             if task is None:
                 return
+            old_status = task.get("status")
             task.update(updates)
+            new_status = task.get("status")
+            _maybe_refund_quota(key, old_status, new_status)
             task["updated_at"] = _now_iso()
             task["updated_ts"] = time.time()
             self._save_locked()
 
     def _cancel_task_locked(self, key: str, task: dict[str, Any]) -> None:
+        old_status = task.get("status")
         task["status"] = CANCELLED_STATUS
         task["error"] = "任务已取消"
         task["updated_at"] = _now_iso()
         task["updated_ts"] = time.time()
+        _maybe_refund_quota(key, old_status, CANCELLED_STATUS)
         cancel_event = self._cancel_events.get(key)
         if cancel_event:
             cancel_event.set()

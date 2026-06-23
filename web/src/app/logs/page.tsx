@@ -159,7 +159,7 @@ function LogsContent() {
         </div>
       </div>
 
-      <Card className="overflow-hidden rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="overflow-hidden rounded-xl border-white/80 bg-white/90 shadow-sm">
         <CardContent className="p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
             <div className="flex flex-wrap items-center gap-3 text-sm text-stone-600">
@@ -277,7 +277,7 @@ function LogsContent() {
         </CardContent>
       </Card>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="flex h-[min(88vh,860px)] w-[min(92vw,920px)] flex-col overflow-hidden rounded-2xl p-0">
+        <DialogContent className="flex h-[min(88vh,860px)] w-[min(92vw,920px)] flex-col overflow-hidden rounded-xl p-0">
           <DialogHeader className="shrink-0 border-b border-stone-100 px-6 py-5">
             <DialogTitle>日志详情</DialogTitle>
           </DialogHeader>
@@ -325,7 +325,7 @@ function LogsContent() {
         onIndexChange={setLightboxIndex}
       />
       <Dialog open={deletingItems.length > 0} onOpenChange={(open) => (!open ? setDeletingItems([]) : null)}>
-        <DialogContent showCloseButton={false} className="rounded-2xl p-6">
+        <DialogContent showCloseButton={false} className="rounded-xl p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>{deletingItems.length === 1 ? "删除日志" : "删除所选日志"}</DialogTitle>
             <DialogDescription className="text-sm leading-6">

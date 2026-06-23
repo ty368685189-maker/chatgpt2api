@@ -412,7 +412,7 @@ export function ImageComposer({
 
         <div
           className={cn(
-            "overflow-hidden rounded-[18px] border border-stone-200/80 bg-white shadow-[0_8px_24px_-24px_rgba(15,23,42,0.28)] transition dark:border-white/10 dark:bg-stone-950/80 sm:rounded-[28px] sm:shadow-none",
+            "overflow-hidden rounded-xl border border-stone-200/80 bg-white shadow-[0_8px_24px_-24px_rgba(15,23,42,0.28)] transition dark:border-white/10 dark:bg-stone-950/80 sm:rounded-xl sm:shadow-none",
             isDraggingImage && "border-stone-900 bg-stone-50",
           )}
         >
@@ -449,10 +449,10 @@ export function ImageComposer({
                   void onSubmit();
                 }
               }}
-              className="min-h-[74px] resize-none rounded-[18px] border-0 bg-transparent px-3.5 pt-3.5 pb-1.5 text-[15px] leading-6 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0 dark:text-stone-100 dark:placeholder:text-stone-500 sm:min-h-[124px] sm:rounded-[28px] sm:px-5 sm:pt-5 sm:pb-16 sm:leading-7"
+              className="min-h-[44px] resize-none rounded-xl border-0 bg-transparent px-3.5 pt-3.5 pb-2 text-[15px] leading-6 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0 dark:text-stone-100 dark:placeholder:text-stone-500 sm:min-h-[52px] sm:rounded-xl sm:px-5 sm:pt-4 sm:pb-3 sm:leading-7"
             />
             {isDraggingImage ? (
-              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[18px] border-2 border-dashed border-stone-900 bg-white/85 text-sm font-medium text-stone-900 backdrop-blur-[1px] sm:rounded-[28px]">
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-stone-900 bg-white/85 text-sm font-medium text-stone-900 backdrop-blur-[1px] sm:rounded-xl">
                 <div className="flex items-center gap-2 rounded-full bg-stone-950 px-3 py-1.5 text-sm text-white shadow-lg sm:px-4 sm:py-2">
                   <ImagePlus className="size-3.5 sm:size-4" />
                   <span>松开以上传参考图</span>
@@ -461,15 +461,15 @@ export function ImageComposer({
             ) : null}
 
             <div
-              className="rounded-b-[18px] border-t border-stone-100 bg-white px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-1.5 dark:border-white/10 dark:bg-stone-950/95 sm:absolute sm:inset-x-0 sm:bottom-0 sm:rounded-b-none sm:border-t-0 sm:bg-gradient-to-t sm:from-white sm:via-white/95 sm:to-transparent sm:px-5 sm:pb-3 sm:pt-5 sm:dark:from-stone-950 sm:dark:via-stone-950/95 sm:dark:to-stone-950/0"
+              className="rounded-b-xl border-t border-stone-100 bg-white px-2.5 pb-2 pt-1.5 dark:border-white/10 dark:bg-stone-950/95 sm:rounded-b-2xl sm:px-5 sm:pb-3 sm:pt-2 sm:border-t-0 sm:bg-transparent sm:dark:bg-transparent"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex flex-col gap-1.5 sm:gap-3">
-                <div className="hide-scrollbar flex flex-nowrap items-center gap-1 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0 sm:gap-2">
+              <div className="flex flex-row items-center justify-between gap-2">
+                <div className="hide-scrollbar flex flex-1 flex-nowrap items-center gap-1 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0 sm:gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-7 shrink-0 rounded-full border-stone-200 bg-white px-2.5 text-[10px] font-medium text-stone-700 shadow-none sm:h-9 sm:px-3.5 sm:text-sm"
+                    className="h-7 shrink-0 rounded-md border-stone-200 bg-white px-2.5 text-[10px] font-medium text-stone-700 shadow-none sm:h-9 sm:px-3.5 sm:text-sm"
                     onClick={onPickReferenceImage}
                     aria-label={
                       referenceImages.length > 0 ? "添加参考图" : "上传"
@@ -480,11 +480,11 @@ export function ImageComposer({
                       {referenceImages.length > 0 ? "添加参考图" : "上传"}
                     </span>
                   </Button>
-                  <div className="relative flex h-7 min-w-0 shrink items-center rounded-full bg-transparent text-[10px] sm:h-auto sm:shrink-0 sm:text-[13px]">
+                  <div className="relative flex h-7 min-w-0 shrink items-center rounded-md bg-transparent text-[10px] sm:h-auto sm:shrink-0 sm:text-[13px]">
                     <button
                       ref={sizeMenuBtnRef}
                       type="button"
-                      className="inline-flex h-7 w-fit max-w-[calc(100vw-8rem)] items-center justify-between gap-2 rounded-full bg-stone-100 px-2.5 text-left text-[10px] font-semibold text-stone-900 sm:h-9 sm:max-w-none sm:px-4 sm:text-sm"
+                      className="inline-flex h-7 w-fit max-w-[calc(100vw-8rem)] items-center justify-between gap-2 rounded-md bg-stone-100 px-2.5 text-left text-[10px] font-semibold text-stone-900 sm:h-9 sm:max-w-none sm:px-4 sm:text-sm"
                       onClick={() => {
                         if (!isSizeMenuOpen && sizeMenuBtnRef.current) {
                           const rect =
@@ -881,7 +881,7 @@ export function ImageComposer({
                     type="button"
                     onClick={() => void onSubmit()}
                     disabled={!prompt.trim() || isSubmitting}
-                    className="inline-flex h-9 min-w-[100px] items-center justify-center gap-2 rounded-full bg-stone-950 px-3.5 text-[13px] font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300 sm:h-11 sm:min-w-[140px] sm:text-sm"
+                    className="inline-flex h-9 min-w-[100px] items-center justify-center gap-2 rounded-lg bg-stone-950 px-3.5 text-[13px] font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300 sm:h-11 sm:min-w-[140px] sm:text-sm"
                     aria-label={
                       referenceImages.length > 0 ? "编辑图片" : "生成图片"
                     }

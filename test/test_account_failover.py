@@ -22,6 +22,7 @@ class AccountFailoverTests(unittest.TestCase):
         ]
         
         request = mock.Mock()
+        request.cancel_event = None
         request.model = "gpt-image-2"
         request.progress_callback = None
         request.message_as_error = False
@@ -52,6 +53,7 @@ class AccountFailoverTests(unittest.TestCase):
         ]
         
         request = mock.Mock()
+        request.cancel_event = None
         request.model = "gpt-image-2"
         request.progress_callback = None
         request.message_as_error = False
@@ -77,6 +79,7 @@ class AccountFailoverTests(unittest.TestCase):
         mock_stream.side_effect = ImageGenerationError("content violation", code="content_policy_violation")
         
         request = mock.Mock()
+        request.cancel_event = None
         request.model = "gpt-image-2"
         request.progress_callback = None
         request.message_as_error = False

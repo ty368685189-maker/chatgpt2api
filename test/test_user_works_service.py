@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import pytest
 import uuid
-from datetime import datetime, timedelta
 from services.user_service import UserService, _api_key_hash
 from services.works_service import WorksService
 from services.storage.json_storage import JSONStorageBackend
-from services.config import config
 
 
 @pytest.fixture

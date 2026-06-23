@@ -418,6 +418,49 @@ class UserService:
             self._save_users(users)
 
 
+
+    def refund_quota(self, user_id: str) -> None:
+        """退还用户的生图额度"""
+        with self._lock:
+            users = self._load_users()
+            user = next((u for u in users if u.get("id") == user_id), None)
+            if not user:
+                return
+
+            mode = str(user.get("quota_mode") or "daily")
+            daily_used = _coerce_non_negative_int(user.get("daily_quota_used"), 0)
+            fixed_used = _coerce_non_negative_int(user.get("fixed_quota_used"), 0)
+
+            if mode == "daily":
+                if daily_used > 0:
+                    user["daily_quota_used"] = daily_used - 1
+            elif mode == "fixed":
+                if fixed_used > 0:
+                    user["fixed_quota_used"] = fixed_used - 1
+            elif mode == "hybrid":
+                if fixed_used > 0:
+                    user["fixed_quota_used"] = fixed_used - 1
+                elif daily_used > 0:
+                    user["daily_quota_used"] = daily_used - 1
+            
+            daily_limit = _coerce_non_negative_int(user.get("daily_quota_limit"), 0)
+            fixed_limit = _coerce_non_negative_int(user.get("fixed_quota_limit"), 0)
+            if mode == "daily":
+                user["quota_used"] = _coerce_non_negative_int(user.get("daily_quota_used"), 0)
+            elif mode == "fixed":
+                user["quota_used"] = _coerce_non_negative_int(user.get("fixed_quota_used"), 0)
+            elif mode == "hybrid":
+                if daily_limit > 0 and fixed_limit > 0:
+                    user["quota_used"] = _coerce_non_negative_int(user.get("daily_quota_used"), 0) + _coerce_non_negative_int(user.get("fixed_quota_used"), 0)
+                elif daily_limit > 0:
+                    user["quota_used"] = _coerce_non_negative_int(user.get("daily_quota_used"), 0)
+                elif fixed_limit > 0:
+                    user["quota_used"] = _coerce_non_negative_int(user.get("fixed_quota_used"), 0)
+                else:
+                    user["quota_used"] = 0
+
+            self._save_users(users)
+
     # ================= 管理员用户管控 =================
 
     def list_users(self, q: str = "", status: str = "", role: str = "") -> list[dict[str, Any]]:
